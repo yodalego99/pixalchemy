@@ -16,24 +16,29 @@
         <property name="margin-top">4</property>
         <property name="margin-bottom">4</property>
         <property name="orientation">vertical</property>
+        <property name="homogeneous">True</property>
         <child>
-          <object class="GtkLabel" id="_label1">
+          <object class="GtkImage">
+            <property name="name">pictureBox1</property>
             <property name="visible">True</property>
             <property name="can-focus">False</property>
-            <property name="label" translatable="yes">Hello World!</property>
+            <property name="stock">gtk-dialog-error</property>
+            <property name="icon_size">5</property>
           </object>
           <packing>
-            <property name="expand">True</property>
+            <property name="expand">False</property>
             <property name="fill">True</property>
             <property name="position">0</property>
           </packing>
         </child>
         <child>
-          <object class="GtkButton" id="_button1">
-            <property name="label" translatable="yes">Click me!</property>
+          <object class="GtkScrollbar">
+            <property name="name">trackBar1</property>
             <property name="visible">True</property>
             <property name="can-focus">False</property>
-            <property name="receives-default">True</property>
+            <property name="lower-stepper-sensitivity">on</property>
+            <property name="upper-stepper-sensitivity">off</property>
+            <property name="show-fill-level">True</property>
           </object>
           <packing>
             <property name="expand">False</property>
