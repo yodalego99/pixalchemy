@@ -70,7 +70,6 @@ public partial class MainView : UserControl
                 {
                     while (IsPlaying && CurrentFrameNumber < TotalFrames)
                     {
-                        SelectedVideoFile.Set(CapProp.PosMsec, Convert.ToDouble(CurrentFrameNumber)*(1000.0/Convert.ToDouble(FPS)));
                         CurrentFrame = SelectedVideoFile.QueryFrame().ToImage<Rgba, Byte>();
                         if (IsExported && ExportedVideoFile != null)
                         {
@@ -81,7 +80,7 @@ public partial class MainView : UserControl
                         pictureBox1.Source = CreateBitmapFromPixelData(CurrentFrame.Bytes, CurrentFrame.Width, CurrentFrame.Height);
                         trackBar1.Value = CurrentFrameNumber;
                         CurrentFrameNumber++;
-                        await Task.Delay(1000 / FPS);
+                        await Task.Delay(1000/FPS);
                     }
                 }
                 catch (Exception ex)
