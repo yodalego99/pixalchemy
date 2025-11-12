@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
+using System.Threading;
 using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
@@ -42,8 +43,7 @@ public partial class MainView : UserControl
 
         return bitmap;
     }
-    int ProcessorCount = Environment.ProcessorCount; // processzormagok száma
-    VideoCapture? SelectedVideoFile; // kiválasztott videó (felhasználó adja meg)
+    VideoCaptureInfo? SelectedVideoFile; // kiválasztott videó (felhasználó adja meg)
     VideoCapture? WebCamVideo; // webkamera videója
     VideoCapture? ExportedVideoFile; // visszajátszásmiatt van // később át lesz írva
     Image<Rgba, Byte> WebCamFrame; // webkamera videóinak képkockája
@@ -66,13 +66,13 @@ public partial class MainView : UserControl
 
             try
             {
-                while (IsPlaying && SelectedVideoFile.Get(CapProp.PosMsec) <
-                       (Convert.ToDouble(TotalFrames) * (1000.0 / FPS)))
+                while (IsPlaying && SelectedVideoFile.Video.Get(CapProp.PosFrames) < SelectedVideoFile.TotalFrames)
                 {
-                    CurrentFrame = SelectedVideoFile.QueryFrame().ToImage<Rgba, Byte>();
-                    if (IsExported && CurrentFrameNumber < TotalFrames)
+                    CurrentFrame = SelectedVideoFile.Video.QueryFrame().ToImage<Rgba, Byte>();
+                    Console.WriteLine("Ms = " + SelectedVideoFile.Video.Get(CapProp.PosMsec) + "/" + Convert.ToDouble(SelectedVideoFile.TotalFrames) * (1000.0 / SelectedVideoFile.FPS));
+                    Console.WriteLine("Frames = " + SelectedVideoFile.Video.Get(CapProp.PosFrames) + "/" + SelectedVideoFile.Video.Get(CapProp.FrameCount));
+                    if (IsExported)
                     {
-                        ExportedVideoFile.Set(CapProp.PosAviRatio, CurrentFrameNumber);
                         ExportedVideoFile.Read(ExportedCurrentFrame);
                         pictureBox2.Source = CreateBitmapFromPixelData(ExportedCurrentFrame.Bytes,
                             ExportedCurrentFrame.Width, ExportedCurrentFrame.Height);
@@ -80,9 +80,8 @@ public partial class MainView : UserControl
 
                     pictureBox1.Source =
                         CreateBitmapFromPixelData(CurrentFrame.Bytes, CurrentFrame.Width, CurrentFrame.Height);
-                    CurrentFrameNumber = SelectedVideoFile.Get(CapProp.PosFrames);
-                    trackBar1.Value = CurrentFrameNumber;
-                    await Task.Delay(1000 / Convert.ToInt32(FPS));
+                    trackBar1.Value = SelectedVideoFile.Video.Get(CapProp.PosMsec);
+                    await Task.Delay(TimeSpan.FromMicroseconds(Convert.ToInt64(1000.0 / SelectedVideoFile.FPS)*1000));
                 }
             }
             catch (Exception ex)
@@ -122,7 +121,7 @@ public partial class MainView : UserControl
         pictureBox2.Source = null;
         if (SelectedVideoFile != null)
         {
-            SelectedVideoFile.Set(CapProp.PosMsec, 0);
+            SelectedVideoFile.Video.Set(CapProp.PosMsec, 0);
         }
     }
 
@@ -180,209 +179,6 @@ public partial class MainView : UserControl
             ExportVideoFileFrames.Dispose();
         }
     }*/
-
-    // Háttérleválasztó (ViBe) algoritmus értékei
-
-    // Háttérmodell részletessége - minnél kevesebb, annál gyorsabb, azonban nagyobb az esély a téves foreground pixelek azonosítására
-    int N = 20;
-
-    // Két pixel színe közti különbség
-    int R = 20;
-
-    // Szükséges egyezések száma, hogy hozzáadja a háttérmodellhez az adott pixelt
-    int BgM_min = 2;
-
-    // Ezt azt befolyásolja, hogy milyen hosszú ideig legyenek egyes pixelek a háttérmodell tagjai (minnél nagyobb az érték, annál több a szellem/ jobban látszódik a kameramozgás) - 0-nál nem lehet kisebb
-    int phi = 16;
-
-    ///////////////////////////////////////////////////////////////////////////////////////////
-    // Adatok
-    int FrameWidth, FrameHeight; // Adott videó szélessége/magassága
-
-    // jelenlegi képkocka/kép
-    Image<Bgr, Byte> FrameImage = Mat.Zeros(1, 1, DepthType.Cv8U, 1).ToImage<Bgr, Byte>();
-
-    // háttér modellje
-    byte[,,,] Samples = new byte[0, 0, 0, 0];
-
-    // szegmentációs térkép - háttérleválasztás eredménye -
-    Image<Bgr, Byte> SegMap = Mat.Zeros(1, 1, DepthType.Cv8U, 1).ToImage<Bgr, Byte>();
-
-    byte[,,] FrameImageBytes = new byte[1, 1, 3];
-    byte[,,] SegMapBytes = new byte[1, 1, 3];
-    Mat FrameRead = new Mat();
-    VideoWriter? RemovedBackgroundVideo;
-
-    // háttér és az objektum megkülönböztetésére használt értékek
-    byte Background = 0;
-    byte Foreground = 255;
-
-    bool OnlyBackground = false;
-    bool OnlyForeground = false;
-
-    // Kameramozgás észleléséhez használt értékek/változók
-    double FrameDifferencePercentage = 0.125; // Az a minimális hányados, amely alatt újrainicializálja a háttérmodellt
-    int MatchCount; // Egyezések száma
-    bool ShakyCamera = false; // Kameramozgás észlelése funkció kapcsolója
-    byte[,,,] CompareFrames = new byte[1, 1, 3, 2]; // Két egymás utáni frame tárolására van használva
-
-    Random rnd = new Random();
-
-    private void BackgroundModelInitialization()
-    {
-        for (int k = 0; k < N; k++)
-        {
-            Parallel.For(0, ProcessorCount, CPUCoreID =>
-            {
-                var max = FrameWidth * (CPUCoreID + 1) / ProcessorCount;
-                for (int x = FrameWidth * CPUCoreID / ProcessorCount; x < max; x++)
-                {
-                    for (int y = 0; y < FrameHeight; y++)
-                    {
-                        if (ShakyCamera)
-                        {
-                            CompareFrames[x, y, 0, 0] = FrameImageBytes[y, x, 0];
-                            CompareFrames[x, y, 0, 1] = FrameImageBytes[y, x, 1];
-                            CompareFrames[x, y, 0, 2] = FrameImageBytes[y, x, 2];
-                        }
-
-                        Samples[x, y, k, 0] = FrameImageBytes[y, x, 0];
-                        Samples[x, y, k, 1] = FrameImageBytes[y, x, 1];
-                        Samples[x, y, k, 2] = FrameImageBytes[y, x, 2];
-                    }
-                }
-            });
-        }
-    }
-
-    private void BackgroundModelUpdate(int i)
-    {
-        Parallel.For(0, ProcessorCount, CPUCoreID =>
-        {
-            var max = FrameWidth * (CPUCoreID + 1) / ProcessorCount;
-            for (int x = FrameWidth * CPUCoreID / ProcessorCount; x < max; x++)
-            {
-                for (int y = 0; y < FrameHeight; y++)
-                {
-                    int count = 0;
-                    int index = 0;
-                    int db, dg, dr = 0;
-                    if (i % 2 == 0 && i != 0 && ShakyCamera)
-                    {
-                        CompareFrames[x, y, 0, 0] = FrameImageBytes[y, x, 0];
-                        CompareFrames[x, y, 0, 1] = FrameImageBytes[y, x, 1];
-                        CompareFrames[x, y, 0, 2] = FrameImageBytes[y, x, 2];
-                        if ((0.11d * CompareFrames[x, y, 0, 0] + 0.59d * CompareFrames[x, y, 0, 1] +
-                             0.3d * CompareFrames[x, y, 0, 2]) == (0.11d * CompareFrames[x, y, 1, 0] +
-                                                                   0.59d * CompareFrames[x, y, 1, 1] +
-                                                                   0.3d * CompareFrames[x, y, 1, 2]))
-                        {
-                            MatchCount++;
-                        }
-                    }
-                    else if (i % 2 == 1 && ShakyCamera)
-                    {
-                        CompareFrames[x, y, 1, 0] = FrameImageBytes[y, x, 0];
-                        CompareFrames[x, y, 1, 1] = FrameImageBytes[y, x, 1];
-                        CompareFrames[x, y, 1, 2] = FrameImageBytes[y, x, 2];
-                        if ((0.11d * CompareFrames[x, y, 0, 0] + 0.59d * CompareFrames[x, y, 0, 1] +
-                             0.3d * CompareFrames[x, y, 0, 2]) == (0.11d * CompareFrames[x, y, 1, 0] +
-                                                                   0.59d * CompareFrames[x, y, 1, 1] +
-                                                                   0.3d * CompareFrames[x, y, 1, 2]))
-                        {
-                            MatchCount++;
-                        }
-                    }
-
-                    while ((count < BgM_min) && (index < N))
-                    {
-                        db = (int)Math.Abs(FrameImageBytes[y, x, 0] - Samples[x, y, index, 0]);
-                        dg = (int)Math.Abs(FrameImageBytes[y, x, 1] - Samples[x, y, index, 1]);
-                        dr = (int)Math.Abs(FrameImageBytes[y, x, 2] - Samples[x, y, index, 2]);
-                        if (db < R && dg < R && dr < R)
-                        {
-                            count++;
-                        }
-
-                        index++;
-                    }
-
-                    if (count >= BgM_min)
-                    {
-                        if (OnlyBackground)
-                        {
-                            SegMapBytes[y, x, 0] = FrameImageBytes[y, x, 0];
-                            SegMapBytes[y, x, 1] = FrameImageBytes[y, x, 1];
-                            SegMapBytes[y, x, 2] = FrameImageBytes[y, x, 2];
-                        }
-                        else
-                        {
-                            SegMapBytes[y, x, 0] = Background;
-                            SegMapBytes[y, x, 1] = Background;
-                            SegMapBytes[y, x, 2] = Background;
-                        }
-
-                        int rand = rnd.Next(0, phi - 1);
-                        if (rand == 0)
-                        {
-                            rand = rnd.Next(0, N - 1);
-                            Samples[x, y, rand, 0] = FrameImageBytes[y, x, 0];
-                            Samples[x, y, rand, 1] = FrameImageBytes[y, x, 1];
-                            Samples[x, y, rand, 2] = FrameImageBytes[y, x, 2];
-                        }
-
-                        rand = rnd.Next(0, phi - 1);
-                        if (rand == 0)
-                        {
-                            int xNG, yNG;
-                            rand = rnd.Next(0, N - 1);
-                            xNG = getRandomNghbPixel(x);
-                            yNG = getRandomNghbPixel(y);
-                            Samples[xNG, yNG, rand, 0] = FrameImageBytes[y, x, 0];
-                            Samples[xNG, yNG, rand, 1] = FrameImageBytes[y, x, 1];
-                            Samples[xNG, yNG, rand, 2] = FrameImageBytes[y, x, 2];
-                        }
-                    }
-                    else
-                    {
-                        if (OnlyForeground)
-                        {
-                            SegMapBytes[y, x, 0] = FrameImageBytes[y, x, 0];
-                            SegMapBytes[y, x, 1] = FrameImageBytes[y, x, 1];
-                            SegMapBytes[y, x, 2] = FrameImageBytes[y, x, 2];
-                        }
-                        else if (OnlyBackground)
-                        {
-                            if ((x + y) % 2 == 0)
-                            {
-                                SegMapBytes[y, x, 0] = 255;
-                                SegMapBytes[y, x, 1] = 0;
-                                SegMapBytes[y, x, 2] = 255;
-                            }
-                            else
-                            {
-                                SegMapBytes[y, x, 0] = Background;
-                                SegMapBytes[y, x, 1] = Background;
-                                SegMapBytes[y, x, 2] = Background;
-                            }
-                        }
-                        else
-                        {
-                            SegMapBytes[y, x, 0] = Foreground;
-                            SegMapBytes[y, x, 1] = Foreground;
-                            SegMapBytes[y, x, 2] = Foreground;
-                        }
-                    }
-                }
-            }
-        });
-        if ((double)(MatchCount) / (double)(FrameWidth * FrameHeight) < FrameDifferencePercentage && ShakyCamera)
-        {
-            BackgroundModelInitialization();
-        }
-
-        MatchCount = 0;
-    }
 
     /*private void vBackgroundRemovalButton_Click(object sender, RoutedEventArgs e)
     {
@@ -474,26 +270,6 @@ public partial class MainView : UserControl
         }
     }*/
 
-    private int getRandomNghbPixel(int coord)
-    {
-        int[] Var = { -1, 0, 1 };
-
-        Random rnd = new Random();
-
-        if (coord == (FrameHeight - 1) || (coord == FrameWidth - 1))
-        {
-            return coord;
-        }
-        else if (coord == 0)
-        {
-            return coord;
-        }
-        else
-        {
-            return coord + Var[rnd.Next(3)];
-        }
-    }
-
     /*private void ControlsEnabled(bool state)
     {
         videóToolStripMenuItem.Enabled = state;
@@ -509,19 +285,19 @@ public partial class MainView : UserControl
         feldolgozásToolStripMenuItem.HideDropDown();
     }*/
 
-    private void TimeStampBar_Scroll(object sender, RoutedEventArgs e)
+    /*private void TimeStampBar_Scroll(object sender, RoutedEventArgs e)
     {
         if (SelectedVideoFile != null)
         {
-            CurrentFrameNumber = trackBar1.Value;
+            SelectedVideoFile.CurrentFrameNumber = trackBar1.Value;
         }
-    }
+    }*/
 
     private void VideoCaptureRemover()
     {
         if (WebCamVideo != null)
         {
-            WebCamVideo.ImageGrabbed -= WebCamVideo_ImageGrabbed;
+            //WebCamVideo.ImageGrabbed -= WebCamVideo_ImageGrabbed;
             WebCamVideo.Stop();
             WebCamVideo.Dispose();
             WebCamVideo = null;
@@ -541,11 +317,11 @@ public partial class MainView : UserControl
         pictureBox2.Source = null;
     }
 
-    private async void VideoFromWebcamToolStripMenuItem_Click(object sender, RoutedEventArgs e)
+    /*private async void VideoFromWebcamToolStripMenuItem_Click(object sender, RoutedEventArgs e)
     {
         VideoCaptureRemover();
         SelectedVideoFile = null;
-        ToolStripMenuReset();
+        //ToolStripMenuReset();
         StopButton_Click(sender, e);
         Thread WebCamCapture = new Thread(() =>
         {
@@ -670,9 +446,9 @@ public partial class MainView : UserControl
     }*/
     private async void VideoSelect_Click(object? sender, RoutedEventArgs e)
     {
-        StopButton_Click(sender, e);
-        ToolStripMenuReset();
-        VideoCaptureRemover();
+        //StopButton_Click(sender, e);
+        //ToolStripMenuReset();
+        //VideoCaptureRemover();
         var topLevel = TopLevel.GetTopLevel(this);
         var OpenVideoFile = await topLevel.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
         {
@@ -684,13 +460,10 @@ public partial class MainView : UserControl
         IsExported = false;
         if (OpenVideoFile.Count >= 1)
         {
-            SelectedVideoFile = new VideoCapture(OpenVideoFile[0].Path.AbsoluteUri);
-            FPS = Convert.ToInt32(SelectedVideoFile.Get(CapProp.Fps));
-            CurrentFrame = SelectedVideoFile.QueryFrame().ToImage<Rgba, Byte>();
-            TotalFrames = Convert.ToInt64(SelectedVideoFile.Get(CapProp.FrameCount) * (1000.0 / FPS));
-            CurrentFrameNumber = 0;
+            SelectedVideoFile = new VideoCaptureInfo(new VideoCapture(OpenVideoFile[0].Path.AbsoluteUri), false);
+            CurrentFrame = SelectedVideoFile.Video.QueryFrame().ToImage<Rgba, Byte>();
             trackBar1.Minimum = 0;
-            trackBar1.Maximum = TotalFrames;
+            trackBar1.Maximum = Convert.ToDouble(SelectedVideoFile.TotalDuration);
             trackBar1.Value = 0;
             VideoFileName = OpenVideoFile[0].Name;
             pictureBox1.Source = CreateBitmapFromPixelData(CurrentFrame.Bytes, CurrentFrame.Width, CurrentFrame.Height);
