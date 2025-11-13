@@ -18,7 +18,7 @@
                 <MenuItem Header="Open _image..."></MenuItem>
                 <MenuItem Header="Paste image..."></MenuItem>
                 <MenuItem Header="Open _video..." Click="VideoSelect_Click" ></MenuItem>
-                <MenuItem Header="Open _webcam..."></MenuItem>
+                <MenuItem Header="Open _webcam..." Click="VideoFromWebcamToolStripMenuItem_Click"></MenuItem>
                 <Separator></Separator>
                 <MenuItem Header="Save image..."></MenuItem>
             </MenuItem>
@@ -38,12 +38,11 @@
             <Image Name="PictureBox2"></Image>
         </Panel>
         <Panel Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="2">
-            <Slider Name="TrackBar1" Margin=" 10, 0"></Slider>
+            <Slider Name="TrackBar1" Margin=" 10, 0"   ValueChanged="TimeStampBar_Scroll"></Slider>
         </Panel>
         <WrapPanel Grid.Row="3" Grid.RowSpan="1" Grid.Column="0" Grid.ColumnSpan="2" HorizontalAlignment="Center">
-            <Button Click="PlayButton_Click">Play</Button>
-            <Button Click="StopButton_Click">Pause</Button>
-            <Button>Stop</Button>
+            <Button Click="PlayButton_Click" Name="PlayButton">Play</Button>
+            <Button Click="StopButton_Click" Name="StopButton">Stop</Button>
         </WrapPanel>
     </Grid>
 </UserControl>

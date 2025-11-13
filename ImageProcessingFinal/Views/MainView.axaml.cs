@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
@@ -8,8 +9,11 @@ using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
+using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform.Storage;
+using Avalonia.Threading;
+using CommunityToolkit.Mvvm.ComponentModel;
 using Emgu.CV;
 using Emgu.CV.CvEnum;
 using Emgu.CV.Structure;
@@ -44,14 +48,14 @@ public partial class MainView : UserControl
         return bitmap;
     }
     VideoCaptureInfo? SelectedVideoFile; // kiválasztott videó (felhasználó adja meg)
-    VideoCapture? WebCamVideo; // webkamera videója
+    VideoCaptureInfo? WebCamVideo; // webkamera videója
     VideoCapture? ExportedVideoFile; // visszajátszásmiatt van // később át lesz írva
     Image<Rgba, Byte> WebCamFrame; // webkamera videóinak képkockája
     bool IsWebcamBackgroundRemovalOn = false; // jelzi, hogy be van-e kapcsolva a webkamera háttérleválasztása
     bool IsFirstFrame = false; // ellenőrzi, hogy a kikért képkocka az első-e a webkamerának
     bool IsPlaying = false; // jelzi, hogy lejátszódik-e éppen a videó
     bool IsExported = false; // jelzi, hogy megtörtént-e már a videón a háttérleválasztás
-    Image<Rgba, Byte> CurrentFrame; // jelenlegi frame Mat típusú képe
+    Mat CurrentFrame; // jelenlegi frame Mat típusú képe
     Image<Rgba, Byte> ExportedCurrentFrame; // kiexportált képkocka - videó exportálásánál használjuk 
     string? VideoFileName = string.Empty; // kiválasztott videófájl neve
 
@@ -66,22 +70,20 @@ public partial class MainView : UserControl
 
             try
             {
-                while (IsPlaying && SelectedVideoFile.Video.Get(CapProp.PosFrames) < SelectedVideoFile.TotalFrames)
+                while (IsPlaying && SelectedVideoFile.Video.Grab() && SelectedVideoFile != null )
                 {
-                    CurrentFrame = SelectedVideoFile.Video.QueryFrame().ToImage<Rgba, Byte>();
-                    Console.WriteLine("Ms = " + SelectedVideoFile.Video.Get(CapProp.PosMsec) + "/" + Convert.ToDouble(SelectedVideoFile.TotalFrames) * (1000.0 / SelectedVideoFile.FPS));
-                    Console.WriteLine("Frames = " + SelectedVideoFile.Video.Get(CapProp.PosFrames) + "/" + SelectedVideoFile.Video.Get(CapProp.FrameCount));
+                    SelectedVideoFile.Video.Retrieve(CurrentFrame);
                     if (IsExported)
                     {
                         ExportedVideoFile.Read(ExportedCurrentFrame);
                         pictureBox2.Source = CreateBitmapFromPixelData(ExportedCurrentFrame.Bytes,
                             ExportedCurrentFrame.Width, ExportedCurrentFrame.Height);
                     }
-
-                    pictureBox1.Source =
-                        CreateBitmapFromPixelData(CurrentFrame.Bytes, CurrentFrame.Width, CurrentFrame.Height);
                     trackBar1.Value = SelectedVideoFile.Video.Get(CapProp.PosMsec);
-                    await Task.Delay(TimeSpan.FromMicroseconds(Convert.ToInt64(1000.0 / SelectedVideoFile.FPS)*1000));
+                    pictureBox1.Source =
+                        CreateBitmapFromPixelData(CurrentFrame.ToImage<Rgba,Byte>().Bytes, CurrentFrame.Width, CurrentFrame.Height);
+                    SelectedVideoFile.Video.Read(CurrentFrame);
+                    await Task.Delay(Convert.ToInt32(SelectedVideoFile.DeltaFrameTime));
                 }
             }
             catch (Exception ex)
@@ -97,18 +99,19 @@ public partial class MainView : UserControl
 
     private void PlayButton_Click(object sender, RoutedEventArgs e)
     {
+        Button button = (Button)sender;
         if (SelectedVideoFile != null)
         {
             if (IsPlaying)
             {
                 IsPlaying = false;
-                //playButton.BackgroundImage = ((System.Drawing.Source)(Properties.Resources.pause_button_1149586));
+                button.Content = "Play";
             }
             else
             {
                 IsPlaying = true;
                 PlayVideoFile();
-                //playButton.BackgroundImage = ((System.Drawing.Source)(Properties.Resources.play_button_11495842));
+                button.Content = "Pause";
             }
         }
     }
@@ -285,27 +288,28 @@ public partial class MainView : UserControl
         feldolgozásToolStripMenuItem.HideDropDown();
     }*/
 
-    /*private void TimeStampBar_Scroll(object sender, RoutedEventArgs e)
+    private void TimeStampBar_Scroll(object sender, RoutedEventArgs e)
     {
-        if (SelectedVideoFile != null)
+        if (SelectedVideoFile != null && SelectedVideoFile.Video.Grab())
         {
-            SelectedVideoFile.CurrentFrameNumber = trackBar1.Value;
+            SelectedVideoFile.Video.Set(CapProp.PosMsec, trackBar1.Value);
+            SelectedVideoFile.Video.Read(CurrentFrame);
+            pictureBox1.Source = CreateBitmapFromPixelData(CurrentFrame.ToImage<Rgba, Byte>().Bytes, CurrentFrame.Width,
+                CurrentFrame.Height);
         }
-    }*/
+    }
 
     private void VideoCaptureRemover()
     {
+        IsPlaying = false;
         if (WebCamVideo != null)
         {
-            //WebCamVideo.ImageGrabbed -= WebCamVideo_ImageGrabbed;
-            WebCamVideo.Stop();
-            WebCamVideo.Dispose();
             WebCamVideo = null;
         }
 
         if (SelectedVideoFile != null)
         {
-            SelectedVideoFile.Dispose();
+            SelectedVideoFile = null;
         }
 
         if (ExportedVideoFile != null)
@@ -315,41 +319,41 @@ public partial class MainView : UserControl
 
         pictureBox1.Source = null;
         pictureBox2.Source = null;
+        GC.Collect();
     }
 
-    /*private async void VideoFromWebcamToolStripMenuItem_Click(object sender, RoutedEventArgs e)
+    private async void VideoFromWebcamToolStripMenuItem_Click(object sender, RoutedEventArgs e)
     {
         VideoCaptureRemover();
-        SelectedVideoFile = null;
         //ToolStripMenuReset();
         StopButton_Click(sender, e);
         Thread WebCamCapture = new Thread(() =>
         {
             if (WebCamVideo == null)
             {
-                Invoke(new Action(() => { képkockákLementéseToolStripMenuItem.Enabled = false; }));
-                WebCamVideo = new VideoCapture(0);
-                FrameWidth = Convert.ToInt32(WebCamVideo.Get(CapProp.FrameWidth));
-                FrameHeight = Convert.ToInt32(WebCamVideo.Get(CapProp.FrameHeight));
-                WebCamVideo.SourceGrabbed += WebCamVideo_ImageGrabbed;
+                //Invoke(new Action(() => { képkockákLementéseToolStripMenuItem.Enabled = false; }));
+                WebCamVideo = new VideoCaptureInfo( new VideoCapture(), true);
+                //FrameWidth = Convert.ToInt32(WebCamVideo.Get(CapProp.FrameWidth));
+                //FrameHeight = Convert.ToInt32(WebCamVideo.Get(CapProp.FrameHeight));
+                WebCamVideo.Video.ImageGrabbed += WebCamVideo_ImageGrabbed;
                 IsWebcamBackgroundRemovalOn = false;
-                ShakyCamera = false;
+                //ShakyCamera = false;
                 IsFirstFrame = true;
-                WebCamVideo.Start();
-                Samples = new byte[FrameWidth, FrameHeight, N, 3];
-                SegMap = new Image<Bgr, Byte>(FrameWidth, FrameHeight);
+                WebCamVideo.Video.Start();
+                //Samples = new byte[FrameWidth, FrameHeight, N, 3];
+                //SegMap = new Image<Bgr, Byte>(FrameWidth, FrameHeight);
             }
             else
             {
-                WebCamVideo.SourceGrabbed -= WebCamVideo_ImageGrabbed;
-                WebCamVideo.Stop();
-                WebCamVideo.Dispose();
+                WebCamVideo.Video.ImageGrabbed -= WebCamVideo_ImageGrabbed;
+                WebCamVideo.Video.Stop();
+                WebCamVideo = null;
                 WebCamVideo = null;
                 IsWebcamBackgroundRemovalOn = false;
                 IsFirstFrame = false;
-                OnlyBackground = false;
-                OnlyForeground = false;
-                Invoke(new Action(() => { képkockákLementéseToolStripMenuItem.Enabled = true; }));
+                //OnlyBackground = false;
+                //OnlyForeground = false;
+                //Invoke(new Action(() => { képkockákLementéseToolStripMenuItem.Enabled = true; }));
             }
         });
         WebCamCapture.Start();
@@ -365,22 +369,23 @@ public partial class MainView : UserControl
         {
             if (WebCamVideo != null)
             {
-                WebCamFrame = WebCamVideo.QueryFrame().ToImage<Rgba, Byte>();
-                pictureBox1.Source = WebCamFrame.ToBitmap();
+                WebCamFrame = WebCamVideo.Video.QueryFrame().ToImage<Rgba, Byte>();
+                Dispatcher.UIThread.Post(() => pictureBox1.Source = CreateBitmapFromPixelData(WebCamFrame.Bytes, WebCamFrame.Width, WebCamFrame.Height));
                 Random rnd = new Random();
-                FrameImage = WebCamFrame.ToImage<Bgr, Byte>();
-                FrameImageBytes = FrameImage.Data;
-                SegMapBytes = SegMap.Data;
+                //FrameImage = WebCamFrame.ToImage<Bgr, Byte>();
+                //FrameImageBytes = FrameImage.Data;
+                //SegMapBytes = SegMap.Data;
                 if (IsWebcamBackgroundRemovalOn && IsFirstFrame)
                 {
-                    BackgroundModelInitialization();
+                    //BackgroundModelInitialization();
                     IsFirstFrame = false;
                 }
                 else if (IsWebcamBackgroundRemovalOn && !IsFirstFrame)
                 {
-                    BackgroundModelUpdate(1);
-                    SegMap.Data = SegMapBytes;
-                    Invoke(new Action(() => { pictureBox2.Source = SegMap.ToBitmap(); }));
+                    //BackgroundModelUpdate(1);
+                    //SegMap.Data = SegMapBytes;
+                    //Invoke(new Action(() => { pictureBox2.Source = SegMap.ToBitmap(); }));
+                    //pictureBox2.Source = CreateBitmapFromPixelData()
                 }
 
                 GC.Collect();
@@ -446,28 +451,31 @@ public partial class MainView : UserControl
     }*/
     private async void VideoSelect_Click(object? sender, RoutedEventArgs e)
     {
-        //StopButton_Click(sender, e);
+        Dispatcher.UIThread.Post(() =>
+        {
+            StopButton_Click(sender, e);
+            VideoCaptureRemover();
+        });
         //ToolStripMenuReset();
-        //VideoCaptureRemover();
         var topLevel = TopLevel.GetTopLevel(this);
         var OpenVideoFile = await topLevel.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
         {
-            Title = "Open video...", AllowMultiple = false, FileTypeFilter = { }
+            Title = "Open video...", AllowMultiple = false, FileTypeFilter = new [] { FilePickerFileTypes.All}
         });
         pictureBox1.Source = null;
         pictureBox2.Source = null;
-        WebCamVideo = null;
         IsExported = false;
         if (OpenVideoFile.Count >= 1)
         {
             SelectedVideoFile = new VideoCaptureInfo(new VideoCapture(OpenVideoFile[0].Path.AbsoluteUri), false);
-            CurrentFrame = SelectedVideoFile.Video.QueryFrame().ToImage<Rgba, Byte>();
+            CurrentFrame = SelectedVideoFile.Video.QueryFrame();
             trackBar1.Minimum = 0;
             trackBar1.Maximum = Convert.ToDouble(SelectedVideoFile.TotalDuration);
             trackBar1.Value = 0;
             VideoFileName = OpenVideoFile[0].Name;
-            pictureBox1.Source = CreateBitmapFromPixelData(CurrentFrame.Bytes, CurrentFrame.Width, CurrentFrame.Height);
-            PlayVideoFile();
+            pictureBox1.Source = CreateBitmapFromPixelData(CurrentFrame.ToImage<Rgba,Byte>().Bytes, CurrentFrame.Width, CurrentFrame.Height);
+                PlayVideoFile();
         }
+        
     }
 }

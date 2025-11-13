@@ -26,5 +26,8 @@
         <PackageReference Include="Emgu.CV.runtime.mini.uwp" />
         <PackageReference Include="Emgu.CV.runtime.ubuntu-x64" />
         <PackageReference Include="Emgu.CV.runtime.windows" />
+        <PackageReference Include="SkiaSharp.Svg" />
+        <PackageReference Include="Svg.Controls.Avalonia" />
+        <PackageReference Include="Svg.Controls.Skia.Avalonia" />
     </ItemGroup>
 </Project>
