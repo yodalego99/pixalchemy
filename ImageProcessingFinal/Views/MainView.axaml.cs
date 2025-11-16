@@ -26,12 +26,15 @@ public partial class MainView : UserControl
     private Image pictureBox1;
     private Image pictureBox2;
     private Slider trackBar1;
+    private Button playButton;
+    private bool suppressTrackBarChange;
     public MainView()
     {
         InitializeComponent();
         pictureBox1 = PictureBox1;
         pictureBox2 = PictureBox2;
         trackBar1 = TrackBar1;
+        playButton = PlayButton;
     }
 
     private static WriteableBitmap CreateBitmapFromPixelData(byte[] rgbPixelData, int width, int height)
@@ -50,41 +53,85 @@ public partial class MainView : UserControl
     VideoCaptureInfo? SelectedVideoFile; // kiválasztott videó (felhasználó adja meg)
     VideoCaptureInfo? WebCamVideo; // webkamera videója
     VideoCapture? ExportedVideoFile; // visszajátszásmiatt van // később át lesz írva
-    Image<Rgba, Byte> WebCamFrame; // webkamera videóinak képkockája
+    Image<Rgba, Byte>? WebCamFrame; // webkamera videóinak képkockája
     bool IsWebcamBackgroundRemovalOn = false; // jelzi, hogy be van-e kapcsolva a webkamera háttérleválasztása
     bool IsFirstFrame = false; // ellenőrzi, hogy a kikért képkocka az első-e a webkamerának
     bool IsPlaying = false; // jelzi, hogy lejátszódik-e éppen a videó
     bool IsExported = false; // jelzi, hogy megtörtént-e már a videón a háttérleválasztás
-    Mat CurrentFrame; // jelenlegi frame Mat típusú képe
-    Image<Rgba, Byte> ExportedCurrentFrame; // kiexportált képkocka - videó exportálásánál használjuk 
+    Mat? CurrentFrame; // jelenlegi frame Mat típusú képe
+    Image<Rgba, Byte>? ExportedCurrentFrame; // kiexportált képkocka - videó exportálásánál használjuk 
     string? VideoFileName = string.Empty; // kiválasztott videófájl neve
 
     private async void PlayVideoFile()
     {
         try
         {
-            if (SelectedVideoFile == null)
+            if (SelectedVideoFile?.Video == null)
             {
                 return;
             }
 
             try
             {
-                while (IsPlaying && SelectedVideoFile.Video.Grab() && SelectedVideoFile != null )
+                var currentVideo = SelectedVideoFile;
+                CurrentFrame ??= new Mat();
+
+                var frameDelay = SelectedVideoFile.DeltaFrameTime ?? 0d;
+                if (double.IsNaN(frameDelay) || double.IsInfinity(frameDelay) || frameDelay <= 0)
                 {
-                    SelectedVideoFile.Video.Retrieve(CurrentFrame);
+                    frameDelay = 33d;
+                }
+
+                while (IsPlaying && currentVideo == SelectedVideoFile)
+                {
+                    if (!currentVideo.Video.Read(CurrentFrame) || CurrentFrame.IsEmpty)
+                    {
+                        break;
+                    }
+
                     if (IsExported)
                     {
-                        ExportedVideoFile.Read(ExportedCurrentFrame);
-                        pictureBox2.Source = CreateBitmapFromPixelData(ExportedCurrentFrame.Bytes,
-                            ExportedCurrentFrame.Width, ExportedCurrentFrame.Height);
+                        if (ExportedVideoFile != null)
+                        {
+                            ExportedCurrentFrame ??= new Image<Rgba, Byte>(CurrentFrame.Width, CurrentFrame.Height);
+                            if (ExportedVideoFile.Read(ExportedCurrentFrame))
+                            {
+                                pictureBox2.Source = CreateBitmapFromPixelData(ExportedCurrentFrame.Bytes,
+                                    ExportedCurrentFrame.Width, ExportedCurrentFrame.Height);
+                            }
+                        }
                     }
-                    trackBar1.Value = SelectedVideoFile.Video.Get(CapProp.PosMsec);
-                    pictureBox1.Source =
-                        CreateBitmapFromPixelData(CurrentFrame.ToImage<Rgba,Byte>().Bytes, CurrentFrame.Width, CurrentFrame.Height);
-                    SelectedVideoFile.Video.Read(CurrentFrame);
-                    await Task.Delay(Convert.ToInt32(SelectedVideoFile.DeltaFrameTime));
+
+                    var frameImage = CurrentFrame.ToImage<Rgba, Byte>();
+                    pictureBox1.Source = CreateBitmapFromPixelData(frameImage.Bytes, frameImage.Width, frameImage.Height);
+
+                    var position = currentVideo.Video.Get(CapProp.PosMsec);
+                    if (!double.IsNaN(position) && !double.IsInfinity(position))
+                    {
+                        suppressTrackBarChange = true;
+                        trackBar1.Value = Math.Clamp(position, trackBar1.Minimum, trackBar1.Maximum);
+                        suppressTrackBarChange = false;
+                    }
+
+                    await Task.Delay((int)Math.Max(1, Math.Min(int.MaxValue, Math.Round(frameDelay))));
                 }
+
+                var reachedEnd = currentVideo == SelectedVideoFile;
+                IsPlaying = false;
+                Dispatcher.UIThread.Post(() =>
+                {
+                    playButton.Content = "Play";
+                    if (reachedEnd && SelectedVideoFile?.Video != null)
+                    {
+                        var endPosition = SelectedVideoFile.Video.Get(CapProp.PosMsec);
+                        if (!double.IsNaN(endPosition) && !double.IsInfinity(endPosition))
+                        {
+                            suppressTrackBarChange = true;
+                            trackBar1.Value = Math.Clamp(endPosition, trackBar1.Minimum, trackBar1.Maximum);
+                            suppressTrackBarChange = false;
+                        }
+                    }
+                });
             }
             catch (Exception ex)
             {
@@ -116,12 +163,15 @@ public partial class MainView : UserControl
         }
     }
 
-    private void StopButton_Click(object sender, RoutedEventArgs e)
+    private void StopButton_Click(object? sender, RoutedEventArgs e)
     {
         IsPlaying = false;
-        trackBar1.Value = 0;
+        suppressTrackBarChange = true;
+        trackBar1.Value = trackBar1.Minimum;
+        suppressTrackBarChange = false;
         pictureBox1.Source = null;
         pictureBox2.Source = null;
+        playButton.Content = "Play";
         if (SelectedVideoFile != null)
         {
             SelectedVideoFile.Video.Set(CapProp.PosMsec, 0);
@@ -290,12 +340,28 @@ public partial class MainView : UserControl
 
     private void TimeStampBar_Scroll(object sender, RoutedEventArgs e)
     {
-        if (SelectedVideoFile != null && SelectedVideoFile.Video.Grab())
+        if (suppressTrackBarChange || SelectedVideoFile?.Video == null)
         {
-            SelectedVideoFile.Video.Set(CapProp.PosMsec, trackBar1.Value);
-            SelectedVideoFile.Video.Read(CurrentFrame);
-            pictureBox1.Source = CreateBitmapFromPixelData(CurrentFrame.ToImage<Rgba, Byte>().Bytes, CurrentFrame.Width,
-                CurrentFrame.Height);
+            return;
+        }
+
+        CurrentFrame ??= new Mat();
+
+        var requestedPosition = trackBar1.Value;
+        if (double.IsNaN(requestedPosition) || double.IsInfinity(requestedPosition))
+        {
+            return;
+        }
+
+        IsPlaying = false;
+        playButton.Content = "Play";
+
+        if (SelectedVideoFile.Video.Set(CapProp.PosMsec, requestedPosition) &&
+            SelectedVideoFile.Video.Read(CurrentFrame) && !CurrentFrame.IsEmpty)
+        {
+            var frameImage = CurrentFrame.ToImage<Rgba, Byte>();
+            pictureBox1.Source = CreateBitmapFromPixelData(frameImage.Bytes, frameImage.Width,
+                frameImage.Height);
         }
     }
 
@@ -453,11 +519,15 @@ public partial class MainView : UserControl
     {
         Dispatcher.UIThread.Post(() =>
         {
-            StopButton_Click(sender, e);
+            StopButton_Click(this, new RoutedEventArgs());
             VideoCaptureRemover();
         });
         //ToolStripMenuReset();
         var topLevel = TopLevel.GetTopLevel(this);
+        if (topLevel?.StorageProvider == null)
+        {
+            return;
+        }
         var OpenVideoFile = await topLevel.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
         {
             Title = "Open video...", AllowMultiple = false, FileTypeFilter = new [] { FilePickerFileTypes.All}
@@ -468,13 +538,24 @@ public partial class MainView : UserControl
         if (OpenVideoFile.Count >= 1)
         {
             SelectedVideoFile = new VideoCaptureInfo(new VideoCapture(OpenVideoFile[0].Path.AbsoluteUri), false);
-            CurrentFrame = SelectedVideoFile.Video.QueryFrame();
+            CurrentFrame = new Mat();
+            suppressTrackBarChange = true;
             trackBar1.Minimum = 0;
             trackBar1.Maximum = Convert.ToDouble(SelectedVideoFile.TotalDuration);
-            trackBar1.Value = 0;
+            trackBar1.Value = trackBar1.Minimum;
+            suppressTrackBarChange = false;
             VideoFileName = OpenVideoFile[0].Name;
-            pictureBox1.Source = CreateBitmapFromPixelData(CurrentFrame.ToImage<Rgba,Byte>().Bytes, CurrentFrame.Width, CurrentFrame.Height);
-                PlayVideoFile();
+            if (SelectedVideoFile.Video.Read(CurrentFrame) && !CurrentFrame.IsEmpty)
+            {
+                var frameImage = CurrentFrame.ToImage<Rgba, Byte>();
+                pictureBox1.Source = CreateBitmapFromPixelData(frameImage.Bytes, frameImage.Width, frameImage.Height);
+                SelectedVideoFile.Video.Set(CapProp.PosFrames, 0);
+            }
+            IsPlaying = false;
+            playButton.Content = "Play";
+            suppressTrackBarChange = true;
+            trackBar1.Value = trackBar1.Minimum;
+            suppressTrackBarChange = false;
         }
         
     }
