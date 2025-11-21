@@ -40,7 +40,7 @@
         <Panel Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="2">
             <Slider Name="TrackBar1" Margin=" 10, 0"   ValueChanged="TimeStampBar_Scroll"></Slider>
         </Panel>
-        <WrapPanel Grid.Row="3" Grid.RowSpan="1" Grid.Column="0" Grid.ColumnSpan="2" HorizontalAlignment="Center">
+        <WrapPanel Grid.Row="3" Grid.Column="0" Grid.ColumnSpan="2" HorizontalAlignment="Center">
             <Button Click="PlayButton_Click" Name="PlayButton">Play</Button>
             <Button Click="StopButton_Click" Name="StopButton">Stop</Button>
         </WrapPanel>

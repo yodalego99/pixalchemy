@@ -28,6 +28,7 @@ public partial class MainView : UserControl
     private Slider _trackBar1;
     private Button _playButton;
     private bool _suppressTrackBarChange;
+
     public MainView()
     {
         InitializeComponent();
@@ -50,6 +51,7 @@ public partial class MainView : UserControl
 
         return bitmap;
     }
+
     VideoCaptureInfo? _selectedVideoFile; // kiválasztott videó (felhasználó adja meg)
     VideoCaptureInfo? _webCamVideo; // webkamera videója
     VideoCapture? _exportedVideoFile; // visszajátszásmiatt van // később át lesz írva
@@ -70,7 +72,9 @@ public partial class MainView : UserControl
             {
                 return;
             }
-            if (_selectedVideoFile?.Video != null && !_selectedVideoFile.Video.Grab() && _selectedVideoFile?.FilePath != String.Empty)
+
+            if (_selectedVideoFile?.Video != null && !_selectedVideoFile.Video.Grab() &&
+                _selectedVideoFile?.FilePath != String.Empty)
             {
                 _selectedVideoFile.Video = new VideoCapture(_selectedVideoFile.FilePath);
             }
@@ -102,7 +106,8 @@ public partial class MainView : UserControl
                     }
 
                     var frameImage = _currentFrame.ToImage<Rgba, Byte>();
-                    _pictureBox1.Source = CreateBitmapFromPixelData(frameImage.Bytes, frameImage.Width, frameImage.Height);
+                    _pictureBox1.Source =
+                        CreateBitmapFromPixelData(frameImage.Bytes, frameImage.Width, frameImage.Height);
 
                     var position = currentVideo.Video.Get(CapProp.PosMsec);
                     if (!double.IsNaN(position) && !double.IsInfinity(position))
@@ -244,6 +249,7 @@ public partial class MainView : UserControl
             {
                 return;
             }
+
             var outputVideo = await topLevel.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
             {
                 Title = "Save video...", DefaultExtension = ".mp4"
@@ -259,7 +265,10 @@ public partial class MainView : UserControl
 
                 //ControlsEnabled(false);
 
-                DialogResult useShakyCameraDetection = MessageBox.Show("Szeretné a videó háttérleválasztásnál használni a jelenleg kísérleti fázisban levő kameramozgás-észlelést?", "Kameramozgás-észlelés", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+                DialogResult useShakyCameraDetection =
+                    MessageBox.Show(
+                        "Szeretné a videó háttérleválasztásnál használni a jelenleg kísérleti fázisban levő kameramozgás-észlelést?",
+                        "Kameramozgás-észlelés", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
                 if (useShakyCameraDetection == DialogResult.Yes)
                 {
                     ShakyCamera = true;
@@ -272,7 +281,8 @@ public partial class MainView : UserControl
 
                 var outputCreation = new Thread(() =>
                 {
-                    RemovedBackgroundVideo = new VideoWriter(outputVideoLocation, VideoWriter.Fourcc('m', 'p', '4', 'v'), FPS, new Size(FrameWidth, FrameHeight), true);
+                    RemovedBackgroundVideo = new VideoWriter(outputVideoLocation,
+                        VideoWriter.Fourcc('m', 'p', '4', 'v'), FPS, new Size(FrameWidth, FrameHeight), true);
                     _selectedVideoFile.Set(CapProp.PosFrames, 0);
                     FrameRead = _selectedVideoFile.QueryFrame();
                     FrameImage = FrameRead.ToImage<Bgr, Byte>();
@@ -299,7 +309,8 @@ public partial class MainView : UserControl
                     _isExported = true;
                     RemovedBackgroundVideo.Dispose();
                     _exportedVideoFile = new VideoCapture(outputVideoLocation);
-                    OnlyBackground = false; OnlyForeground = false;
+                    OnlyBackground = false;
+                    OnlyForeground = false;
                     ShakyCamera = false;
                     phi = 16;
                     MessageBox.Show("A háttérleválasztott videó exportálása sikeres!");
@@ -385,7 +396,7 @@ public partial class MainView : UserControl
             if (_webCamVideo == null)
             {
                 //Invoke(new Action(() => { képkockákLementéseToolStripMenuItem.Enabled = false; }));
-                _webCamVideo = new VideoCaptureInfo( new VideoCapture(), true, String.Empty);
+                _webCamVideo = new VideoCaptureInfo(new VideoCapture(), true, String.Empty);
                 //FrameWidth = Convert.ToInt32(WebCamVideo.Get(CapProp.FrameWidth));
                 //FrameHeight = Convert.ToInt32(WebCamVideo.Get(CapProp.FrameHeight));
                 _webCamVideo.Video.ImageGrabbed += WebCamVideo_ImageGrabbed;
@@ -423,7 +434,9 @@ public partial class MainView : UserControl
             if (_webCamVideo != null)
             {
                 _webCamFrame = _webCamVideo.Video.QueryFrame().ToImage<Rgba, Byte>();
-                Dispatcher.UIThread.Post(() => _pictureBox1.Source = CreateBitmapFromPixelData(_webCamFrame.Bytes, _webCamFrame.Width, _webCamFrame.Height));
+                Dispatcher.UIThread.Post(() =>
+                    _pictureBox1.Source =
+                        CreateBitmapFromPixelData(_webCamFrame.Bytes, _webCamFrame.Width, _webCamFrame.Height));
                 Random rnd = new Random();
                 //FrameImage = WebCamFrame.ToImage<Bgr, Byte>();
                 //FrameImageBytes = FrameImage.Data;
@@ -515,16 +528,18 @@ public partial class MainView : UserControl
         {
             return;
         }
+
         var openVideoFile = await topLevel.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
         {
-            Title = "Open video...", AllowMultiple = false, FileTypeFilter = new [] { FilePickerFileTypes.All}
+            Title = "Open video...", AllowMultiple = false, FileTypeFilter = new[] { FilePickerFileTypes.All }
         });
         _pictureBox1.Source = null;
         _pictureBox2.Source = null;
         _isExported = false;
         if (openVideoFile.Count >= 1)
         {
-            _selectedVideoFile = new VideoCaptureInfo(new VideoCapture(openVideoFile[0].Path.AbsoluteUri), false, openVideoFile[0].Path.AbsoluteUri);
+            _selectedVideoFile = new VideoCaptureInfo(new VideoCapture(openVideoFile[0].Path.AbsoluteUri), false,
+                openVideoFile[0].Path.AbsoluteUri);
             _currentFrame = new Mat();
             _suppressTrackBarChange = true;
             _trackBar1.Minimum = 0;
@@ -538,12 +553,12 @@ public partial class MainView : UserControl
                 _pictureBox1.Source = CreateBitmapFromPixelData(frameImage.Bytes, frameImage.Width, frameImage.Height);
                 _selectedVideoFile.Video.Set(CapProp.PosFrames, 0);
             }
+
             _isPlaying = false;
             _playButton.Content = "Play";
             _suppressTrackBarChange = true;
             _trackBar1.Value = _trackBar1.Minimum;
             _suppressTrackBarChange = false;
         }
-        
     }
 }
