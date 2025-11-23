@@ -65,7 +65,6 @@ public class ViBe
 
     public void BackgroundModelUpdate(int i)
     {
-        _samples = new byte[FrameImage.Size.Width, FrameImage.Size.Height, (int)N, FrameImage.NumberOfChannels];
         _frameImageBytes = FrameImage.Data;
         _segMapBytes = new byte[FrameImage.Size.Height, FrameImage.Size.Width, FrameImage.NumberOfChannels];
         for (var x = 0; x < FrameImage.Size.Width; x++)
@@ -124,9 +123,9 @@ public class ViBe
                         }
                         else
                         {
-                            _segMapBytes[y, x, 0] = 255;
-                            _segMapBytes[y, x, 1] = 255;
-                            _segMapBytes[y, x, 2] = 255;
+                            _segMapBytes[y, x, 0] = byte.MinValue;
+                            _segMapBytes[y, x, 1] = byte.MinValue;
+                            _segMapBytes[y, x, 2] = byte.MinValue;
                         }
 
                         var rand = Rnd.Next(0, Phi - 1);
@@ -167,16 +166,16 @@ public class ViBe
                             }
                             else
                             {
-                                _segMapBytes[y, x, 0] = 0;
-                                _segMapBytes[y, x, 1] = 0;
-                                _segMapBytes[y, x, 2] = 0;
+                                _segMapBytes[y, x, 0] = byte.MinValue;
+                                _segMapBytes[y, x, 1] = byte.MinValue;
+                                _segMapBytes[y, x, 2] = byte.MinValue;
                             }
                         }
                         else
                         {
-                            _segMapBytes[y, x, 0] = 0;
-                            _segMapBytes[y, x, 1] = 0;
-                            _segMapBytes[y, x, 2] = 0;
+                            _segMapBytes[y, x, 0] = byte.MaxValue;
+                            _segMapBytes[y, x, 1] = byte.MaxValue;
+                            _segMapBytes[y, x, 2] = byte.MaxValue;
                         }
                     }
             }
@@ -215,7 +214,7 @@ public static class ViBeExtensions
         vibe.Rnd = new Random(DateTime.Now.Millisecond);
         vibe.N = 20;
         vibe.R = 20;
-        vibe.BgMMin = 4;
+        vibe.BgMMin = 2;
         vibe.Phi = 16;
         vibe.SegmapType = SegmapType.OnlySegmap;
         vibe.FrameDifferencePercentage = 0.125d;

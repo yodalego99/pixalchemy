@@ -4,6 +4,6 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="450"
         x:Class="ImageProcessingFinal.Views.TestDialog"
-        Title="TestDialog">
+        Title="TestDialog" WindowStartupLocation="CenterOwner" Width="500" Height="300">
     Welcome to Avalonia!
 </Window>
