@@ -20,6 +20,7 @@
             <PrivateAssets Condition="'$(Configuration)' != 'Debug'">All</PrivateAssets>
         </PackageReference>
         <PackageReference Include="CommunityToolkit.Mvvm"/>
+        <PackageReference Include="DialogHost.Avalonia" />
         <PackageReference Include="Emgu.CV" />
         <PackageReference Include="Emgu.CV.runtime.debian-arm" />
         <PackageReference Include="Emgu.CV.runtime.debian-arm64" />

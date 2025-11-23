@@ -13,8 +13,8 @@
   </Design.DataContext>
 
     <Grid RowDefinitions= "Auto, *, Auto, Auto" Margin="5" ColumnDefinitions="*,*" HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
-        <Menu Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="2">
-            <MenuItem Header="_File">
+        <Menu Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="2" Name="Toolstrip">
+            <MenuItem Header="_File" Name="InputToolstrip">
                 <MenuItem Header="Open _image..."></MenuItem>
                 <MenuItem Header="Paste image..."></MenuItem>
                 <MenuItem Header="Open _video..." Click="VideoSelect_Click" ></MenuItem>
@@ -22,8 +22,8 @@
                 <Separator></Separator>
                 <MenuItem Header="Save image..."></MenuItem>
             </MenuItem>
-            <MenuItem Header="_Edit">
-                <MenuItem Header="Save _image..."></MenuItem>
+            <MenuItem Header="_Edit" Name="ProcessToolstrip">
+                <MenuItem Header="Remove background..." Click="vBackgroundRemovalButton_Click"></MenuItem>
                 <MenuItem Header="Copy image..."></MenuItem>
                 <MenuItem Header="Save _video..."></MenuItem>
                 <MenuItem Header="Open _webcam..."></MenuItem>
