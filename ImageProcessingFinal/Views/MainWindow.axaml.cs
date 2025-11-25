@@ -23,9 +23,7 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
-        if (Design.IsDesignMode)
-            return;
-        WeakReferenceMessenger.Default.Register<MainWindow, TestMessage>(this, static (w, m) =>
+        WeakReferenceMessenger.Default.Register<MainWindow, TestMessage>(this, (w, m) =>
         {
             var dialog = new TestDialog
             {
@@ -34,7 +32,9 @@ public partial class MainWindow : Window
             m.Reply(dialog.ShowDialog<TestDialogViewModel>(w));
         });
     }
+
     private bool _suppressTrackBarChange;
+
     private static WriteableBitmap CreateBitmapFromPixelData(
         byte[] rgbPixelData,
         int width,
@@ -49,10 +49,8 @@ public partial class MainWindow : Window
             dpi,
             Avalonia.Platform.PixelFormats.Bgr24
         );
-        using (var frameBuffer = bitmap.Lock())
-        {
-            Marshal.Copy(rgbPixelData, 0, frameBuffer.Address, rgbPixelData.Length);
-        }
+        using var frameBuffer = bitmap.Lock();
+        Marshal.Copy(rgbPixelData, 0, frameBuffer.Address, rgbPixelData.Length);
 
         return bitmap;
     }
@@ -67,7 +65,8 @@ public partial class MainWindow : Window
     bool _isExported = false; // jelzi, hogy megtörtént-e már a videón a háttérleválasztás
     Mat? _currentFrame; // jelenlegi frame Mat típusú képe
     Mat? _exportedCurrentFrame; // kiexportált képkocka - videó exportálásánál használjuk
-    string? _videoFileName = string.Empty; // kiválasztott videófájl neve
+    ViBe _viBeProcess;
+    
 
     private async void PlayVideoFile()
     {
@@ -99,14 +98,21 @@ public partial class MainWindow : Window
 
                     if (_isExported)
                     {
+                        if (_exportedVideoFile?.Video != null && !_exportedVideoFile.Video.Grab() &&
+                            _exportedVideoFile?.FilePath != String.Empty)
+                        {
+                            _exportedVideoFile.Video = new VideoCapture(_exportedVideoFile.FilePath);
+                        }
+
                         if (_exportedVideoFile != null)
                         {
                             _exportedCurrentFrame ??= new Mat();
-                            if (_exportedVideoFile.Video.Grab())
+                            if (_exportedVideoFile.Video.Retrieve(_exportedCurrentFrame))
                             {
                                 var exportedFrameImage = _exportedCurrentFrame.ToImage<Bgr, byte>();
-                                PictureBox1.Source =
-                                    CreateBitmapFromPixelData(exportedFrameImage.Bytes, exportedFrameImage.Width, exportedFrameImage.Height);
+                                PictureBox2.Source =
+                                    CreateBitmapFromPixelData(exportedFrameImage.Bytes, exportedFrameImage.Width,
+                                        exportedFrameImage.Height);
                             }
                         }
                     }
@@ -186,6 +192,7 @@ public partial class MainWindow : Window
         {
             _selectedVideoFile.Video.Set(CapProp.PosMsec, 0.0);
         }
+
         if (_exportedVideoFile != null)
         {
             _exportedVideoFile.Video.Set(CapProp.PosMsec, 0.0);
@@ -272,37 +279,40 @@ public partial class MainWindow : Window
                 var outputCreation = new Thread(() =>
                 {
                     var removedBackgroundVideo = new VideoWriter(
-                        outputVideoLocation, VideoWriter.Fourcc('m','p','4','v'),
+                        outputVideoLocation, VideoWriter.Fourcc('m', 'p', '4', 'v'),
                         (double)_selectedVideoFile.Fps,
                         new Size(_selectedVideoFile.Video.Width, _selectedVideoFile.Video.Height),
                         true
                     );
-                    var viBeProcess = new ViBe().WithDefaults();
+                    _viBeProcess = new ViBe().WithDefaults();
                     _currentFrame = _selectedVideoFile.Video.QueryFrame();
-                    viBeProcess.FrameImage = _currentFrame.ToImage<Rgb, byte>();
-                    viBeProcess.BackgroundModelInitialization();
-                    int counter = 0;
+                    _viBeProcess.FrameImage = _currentFrame.ToImage<Rgb, byte>();
+                    _viBeProcess.BackgroundModelInitialization();
+                    var counter = 0;
                     while (_selectedVideoFile.Video.Grab())
                     {
                         _selectedVideoFile.Video.Retrieve(_currentFrame);
                         var frameImage = _currentFrame.ToImage<Rgb, byte>();
-                        viBeProcess.FrameImage = frameImage;
-                        viBeProcess.BackgroundModelUpdate(counter);
-                        var segmapImage = new Image<Rgb, byte>(viBeProcess._segMapBytes);
+                        _viBeProcess.FrameImage = frameImage;
+                        _viBeProcess.BackgroundModelUpdate(counter);
+                        var segmapImage = new Image<Rgb, byte>(_viBeProcess._segMapBytes);
                         removedBackgroundVideo.Write(segmapImage);
-                        counter++;
+                        counter = (counter + 1) % 2;
                         Dispatcher.UIThread.Post(() =>
                         {
-                            PictureBox1.Source = CreateBitmapFromPixelData(frameImage.Bytes, frameImage.Width, frameImage.Height); 
-                            PictureBox2.Source = CreateBitmapFromPixelData(segmapImage.Bytes, segmapImage.Width, segmapImage.Height);
+                            PictureBox1.Source =
+                                CreateBitmapFromPixelData(frameImage.Bytes, frameImage.Width, frameImage.Height);
+                            PictureBox2.Source = CreateBitmapFromPixelData(segmapImage.Bytes, segmapImage.Width,
+                                segmapImage.Height);
                         });
                     }
 
                     _isExported = true;
-                    removedBackgroundVideo.Dispose();
-                    _exportedVideoFile = new VideoCaptureInfo(new VideoCapture(outputVideoLocation), false, outputVideoLocation);
                     Dispatcher.UIThread.Post(() =>
                     {
+                        removedBackgroundVideo.Dispose();
+                        _exportedVideoFile = new VideoCaptureInfo(new VideoCapture(outputVideoLocation), false,
+                            outputVideoLocation);
                         ControlsEnabled(true);
                         StopButton_Click(sender, e);
                     });
@@ -310,6 +320,10 @@ public partial class MainWindow : Window
                 outputCreation.IsBackground = true;
                 outputCreation.Start();
             }
+        }
+        else
+        {
+            _isWebcamBackgroundRemovalOn = true;
         }
     }
 
@@ -357,14 +371,29 @@ public partial class MainWindow : Window
                 frameImage.Height
             );
         }
+
+        if (_exportedVideoFile != null
+            && _exportedVideoFile.Video.Set(CapProp.PosMsec, requestedPosition)
+            && _exportedVideoFile.Video.Read(_exportedCurrentFrame)
+            && _exportedCurrentFrame is not null)
+        {
+            var exportedFrameImage = _exportedCurrentFrame;
+            PictureBox2.Source = CreateBitmapFromPixelData(
+                exportedFrameImage.GetRawData(),
+                exportedFrameImage.Width,
+                exportedFrameImage.Height
+            );
+        }
     }
 
     private void VideoCaptureRemover()
     {
         _isPlaying = false;
-            _webCamVideo = null;
-            _selectedVideoFile = null;
-            _exportedVideoFile = null;
+        _isExported = false;
+        _isWebcamBackgroundRemovalOn = false;
+        _webCamVideo = null;
+        _selectedVideoFile = null;
+        _exportedVideoFile = null;
         PictureBox1.Source = null;
         PictureBox2.Source = null;
         GC.Collect();
@@ -387,10 +416,11 @@ public partial class MainWindow : Window
                     _isFirstFrame = true;
                     _webCamVideo.Video.Start();
                 }
-                else
+                else if (_webCamVideo.Video != null)
                 {
                     _webCamVideo.Video.ImageGrabbed -= WebCamVideo_ImageGrabbed;
                     _webCamVideo.Video.Stop();
+                    _webCamVideo.Video.Dispose();
                     _webCamVideo = null;
                     _webCamVideo = null;
                     _isWebcamBackgroundRemovalOn = false;
@@ -423,24 +453,26 @@ public partial class MainWindow : Window
                         _webCamFrame.Height
                     )
                 );
-                Random rnd = new Random();
-                //FrameImage = WebCamFrame.ToImage<Bgr, Byte>();
-                //FrameImageBytes = FrameImage.Data;
-                //SegMapBytes = SegMap.Data;
                 if (_isWebcamBackgroundRemovalOn && _isFirstFrame)
                 {
-                    //BackgroundModelInitialization();
+                    _viBeProcess = new ViBe().WithDefaults();
+                    _exportedCurrentFrame = _webCamVideo.Video.QueryFrame();
+                    _viBeProcess.FrameImage = _exportedCurrentFrame.ToImage<Rgb, byte>();
+                    _viBeProcess.BackgroundModelInitialization();
                     _isFirstFrame = false;
                 }
                 else if (_isWebcamBackgroundRemovalOn && !_isFirstFrame)
                 {
-                    //BackgroundModelUpdate(1);
-                    //SegMap.Data = SegMapBytes;
-                    //Invoke(new Action(() => { pictureBox2.Source = SegMap.ToBitmap(); }));
-                    //pictureBox2.Source = CreateBitmapFromPixelData()
+                    _exportedCurrentFrame = _webCamVideo.Video.QueryFrame();
+                    _viBeProcess.FrameImage = _exportedCurrentFrame.ToImage<Rgb, byte>();
+                    _viBeProcess.BackgroundModelUpdate(1);
+                    var segmapImage = new Image<Rgb, byte>(_viBeProcess._segMapBytes);
+                    Dispatcher.UIThread.Post(() =>
+                    {
+                        PictureBox2.Source = CreateBitmapFromPixelData(segmapImage.Bytes, segmapImage.Width,
+                            segmapImage.Height);
+                    });
                 }
-
-                GC.Collect();
             }
         }
         catch (Exception ex)
@@ -449,64 +481,11 @@ public partial class MainWindow : Window
         }
     }
 
-    /*private void OnlyForegroundToolStripMenuItem_Click(object sender, RoutedEventArgs e)
-    {
-        ToolStripMenuReset();
-        StopButton_Click(sender, e);
-        if (SelectedVideoFile != null)
-        {
-            OnlyForeground = true;
-            OnlyBackground = false;
-            vBackgroundRemovalButton_Click(sender, e);
-        }
-        else if (WebCamVideo != null)
-        {
-            OnlyForeground = true;
-            OnlyBackground = false;
-            IsWebcamBackgroundRemovalOn = true;
-        }
-    }
-
-    private void OnlyBackgroundToolStripMenuItem_Click(object sender, RoutedEventArgs e)
-    {
-        ToolStripMenuReset();
-        StopButton_Click(sender, e);
-        if (SelectedVideoFile != null)
-        {
-            OnlyForeground = false;
-            OnlyBackground = true;
-            vBackgroundRemovalButton_Click(sender, e);
-        }
-        else if (WebCamVideo != null)
-        {
-            OnlyForeground = false;
-            OnlyBackground = true;
-            IsWebcamBackgroundRemovalOn = true;
-        }
-    }
-
-    private void SegmentationMapToolStripMenuItem_Click(object sender, RoutedEventArgs e)
-    {
-        ToolStripMenuReset();
-        StopButton_Click(sender, e);
-        if (SelectedVideoFile != null)
-        {
-            OnlyForeground = false;
-            OnlyBackground = false;
-            vBackgroundRemovalButton_Click(sender, e);
-        }
-        else if (WebCamVideo != null)
-        {
-            OnlyForeground = false;
-            OnlyBackground = false;
-            IsWebcamBackgroundRemovalOn = true;
-        }
-    }*/
-    
     private async void OpenDialogWithView(object? sender, RoutedEventArgs e)
     {
-        var test = WeakReferenceMessenger.Default.Send(new TestMessage());
+        var test = await WeakReferenceMessenger.Default.Send(new TestMessage());
     }
+
     private async void VideoSelect_Click(object? sender, RoutedEventArgs e)
     {
         Dispatcher.UIThread.Post(() =>
@@ -539,7 +518,6 @@ public partial class MainWindow : Window
             TrackBar1.Maximum = Convert.ToDouble(_selectedVideoFile.TotalDuration);
             TrackBar1.Value = TrackBar1.Minimum;
             _suppressTrackBarChange = false;
-            _videoFileName = openVideoFile[0].Name;
             if (_selectedVideoFile.Video.Read(_currentFrame) && !_currentFrame.IsEmpty)
             {
                 var frameImage = _currentFrame.ToImage<Rgb, Byte>();

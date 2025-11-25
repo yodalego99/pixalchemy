@@ -1,4 +1,5 @@
 using Avalonia.Controls;
+using CommunityToolkit.Mvvm.ComponentModel;
 
 namespace ImageProcessingFinal.Views;
 
@@ -8,4 +9,6 @@ public partial class TestDialog : Window
     {
         InitializeComponent();
     }
+    
+    public int N;
 }
