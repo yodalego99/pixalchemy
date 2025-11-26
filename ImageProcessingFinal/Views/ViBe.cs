@@ -150,7 +150,7 @@ public class ViBe
                     }
                     else
                     {
-                        if (SegmapType ==  Views.SegmapType.Background)
+                        if (SegmapType == Views.SegmapType.Background)
                         {
                             _segMapBytes[y, x, 0] = _frameImageBytes[y, x, 0];
                             _segMapBytes[y, x, 1] = _frameImageBytes[y, x, 1];

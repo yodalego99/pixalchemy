@@ -25,7 +25,7 @@ public partial class MainWindow : Window
         InitializeComponent();
         WeakReferenceMessenger.Default.Register<MainWindow, TestMessage>(this, (w, m) =>
         {
-            var dialog = new TestDialog
+            var dialog = new ViBeSettingsDialog
             {
                 DataContext = new TestDialogViewModel()
             };
@@ -391,6 +391,11 @@ public partial class MainWindow : Window
         _isPlaying = false;
         _isExported = false;
         _isWebcamBackgroundRemovalOn = false;
+        if (_webCamVideo?.Video != null)
+        {
+            _webCamVideo.Video.Stop();
+            _webCamVideo.Video.Dispose();
+        }
         _webCamVideo = null;
         _selectedVideoFile = null;
         _exportedVideoFile = null;
@@ -415,16 +420,6 @@ public partial class MainWindow : Window
                     _isWebcamBackgroundRemovalOn = false;
                     _isFirstFrame = true;
                     _webCamVideo.Video.Start();
-                }
-                else if (_webCamVideo.Video != null)
-                {
-                    _webCamVideo.Video.ImageGrabbed -= WebCamVideo_ImageGrabbed;
-                    _webCamVideo.Video.Stop();
-                    _webCamVideo.Video.Dispose();
-                    _webCamVideo = null;
-                    _webCamVideo = null;
-                    _isWebcamBackgroundRemovalOn = false;
-                    _isFirstFrame = false;
                 }
             });
             webCamCapture.Start();

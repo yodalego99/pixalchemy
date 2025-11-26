@@ -3,12 +3,10 @@ using CommunityToolkit.Mvvm.ComponentModel;
 
 namespace ImageProcessingFinal.Views;
 
-public partial class TestDialog : Window
+public partial class ViBeSettingsDialog : Window
 {
-    public TestDialog()
+    public ViBeSettingsDialog()
     {
         InitializeComponent();
     }
-    
-    public int N;
 }

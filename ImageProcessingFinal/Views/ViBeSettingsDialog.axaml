@@ -4,13 +4,12 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:viewModels="clr-namespace:ImageProcessingFinal.ViewModels"
         mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="450"
-        x:Class="ImageProcessingFinal.Views.TestDialog" Background="#1C1C1C"
-        Title="TestDialog" WindowStartupLocation="CenterOwner" Width="500" Height="300"
+        x:Class="ImageProcessingFinal.Views.ViBeSettingsDialog" Background="#1C1C1C"
+        Title="ViBe settings" WindowStartupLocation="CenterOwner" Width="500" Height="300"
         x:DataType="viewModels:TestDialogViewModel">
         <Design.DataContext>
                 <viewModels:TestDialogViewModel/>
         </Design.DataContext>
         <StackPanel>
-                <NumericUpDown Value="{Binding N}" ></NumericUpDown>
         </StackPanel>
 </Window>
