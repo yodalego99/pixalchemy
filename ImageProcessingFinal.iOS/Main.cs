@@ -1,5 +1,3 @@
-using UIKit;
-
 namespace ImageProcessingFinal.iOS;
 
 public class Application

@@ -3,10 +3,50 @@
         xmlns:vm="using:ImageProcessingFinal.ViewModels"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-        xmlns:views="using:ImageProcessingFinal.Views"
         mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="450"
         x:Class="ImageProcessingFinal.Views.MainWindow"
-        Icon="/Assets/image.ico"
-        Title="ImageProcessingFinal">
-        <views:MainView />
+        Icon="/Assets/image.ico" Background="#1C1C1C"
+        Title="Image processing">
+    <Design.DataContext>
+        <!-- This only sets the DataContext for the previewer in an IDE,
+         to set the actual DataContext for runtime, set the DataContext property in code (look at App.axaml.cs) -->
+        <vm:MainViewModel />
+    </Design.DataContext>
+    <Grid RowDefinitions="Auto, *, Auto, Auto" Margin="10" ColumnDefinitions="*,*">
+        <Menu Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="2" Name="Toolstrip">
+            <MenuItem Header="_File" Name="InputToolstrip">
+                <MenuItem Header="Open _image..." Click="OpenDialogWithView"></MenuItem>
+                <MenuItem Header="Paste image..."></MenuItem>
+                <MenuItem Header="Open _video..." Click="VideoSelect_Click"></MenuItem>
+                <MenuItem Header="Open _webcam..." Click="VideoFromWebcamToolStripMenuItem_Click"></MenuItem>
+                <Separator></Separator>
+                <MenuItem Header="Save image..."></MenuItem>
+            </MenuItem>
+            <MenuItem Header="_Edit" Name="ProcessToolstrip">
+                <MenuItem Header="Remove video background..." Click="vBackgroundRemovalButton_Click"></MenuItem>
+                <MenuItem Header="Copy image..."></MenuItem>
+                <MenuItem Header="Save _video..."></MenuItem>
+                <MenuItem Header="Open _webcam..."></MenuItem>
+                <Separator></Separator>
+                <MenuItem Header="Save image..."></MenuItem>
+            </MenuItem>
+        </Menu>
+        <Panel Grid.Row="1" Grid.Column="0">
+            <Border Background="#161616" BorderBrush="Azure" BorderThickness="1">
+                <Image Name="PictureBox1"></Image>
+            </Border>
+        </Panel>
+        <Panel Grid.Row="1" Grid.Column="1">
+            <Border Background="#161616" BorderBrush="Azure" BorderThickness="1">
+                <Image Name="PictureBox2"></Image>
+            </Border>
+        </Panel>
+        <Panel Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="2">
+            <Slider Name="TrackBar1" Margin=" 10, 0" ValueChanged="TimeStampBar_Scroll"></Slider>
+        </Panel>
+        <WrapPanel Grid.Row="3" Grid.Column="0" Grid.ColumnSpan="2" HorizontalAlignment="Center">
+            <Button Click="PlayButton_Click" Name="PlayButton">Play</Button>
+            <Button Click="StopButton_Click" Name="StopButton">Stop</Button>
+        </WrapPanel>
+    </Grid>
 </Window>
