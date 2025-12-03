@@ -25,6 +25,7 @@
             <MenuItem Header="_Edit" Name="ProcessToolstrip">
                 <MenuItem Header="Remove video background..." Click="vBackgroundRemovalButton_Click"></MenuItem>
                 <MenuItem Header="Apply mosaic..." Click="MosaicEffectButton_Click"></MenuItem>
+                <MenuItem Header="Particle morph..." Click="ParticleMorphButton_Click"></MenuItem>
                 <MenuItem Header="Copy image..."></MenuItem>
                 <MenuItem Header="Save _video..."></MenuItem>
                 <MenuItem Header="Open _webcam..."></MenuItem>

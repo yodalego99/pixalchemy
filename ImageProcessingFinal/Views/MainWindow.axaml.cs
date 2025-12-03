@@ -70,6 +70,27 @@ public partial class MainWindow : Window
         return folder;
     }
 
+    private void CancelParticleMorphAnimation()
+    {
+        if (_particleMorphCts == null)
+        {
+            return;
+        }
+
+        try
+        {
+            _particleMorphCts.Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+        }
+        finally
+        {
+            _particleMorphCts.Dispose();
+            _particleMorphCts = null;
+        }
+    }
+
     private FilePickerSaveOptions BuildVideoSaveOptions(string title, string suffix)
     {
         return new FilePickerSaveOptions
@@ -115,6 +136,112 @@ public partial class MainWindow : Window
         };
     }
 
+    private async Task<ParticleMorphSettingsViewModel?> ShowParticleMorphSettingsDialogAsync()
+    {
+        var dialog = new ParticleMorphSettingsDialog
+        {
+            DataContext = new ParticleMorphSettingsViewModel()
+        };
+
+        return await dialog.ShowDialog<ParticleMorphSettingsViewModel?>(this);
+    }
+
+    private async Task StartParticleMorphAsync(string targetPath, string sourcePath, int particleSize, string? videoOutputPath)
+    {
+        CancelParticleMorphAnimation();
+        await Task.Run(async () =>
+        {
+            try
+            {
+                using var targetImage = new Image<Bgr, byte>(targetPath);
+                using var sourceImage = new Image<Bgr, byte>(sourcePath);
+                using var resizedSource = sourceImage.Resize(targetImage.Width, targetImage.Height, Inter.Area);
+
+                var targetBytes = targetImage.Bytes;
+                var targetWidth = targetImage.Width;
+                var targetHeight = targetImage.Height;
+                var sourceBytes = resizedSource.Bytes;
+
+                Dispatcher.UIThread.Post(() =>
+                {
+                    PictureBox1.Source = CreateBitmapFromPixelData(targetBytes, targetWidth, targetHeight);
+                    PictureBox2.Source = CreateBitmapFromPixelData(sourceBytes, targetWidth, targetHeight);
+                });
+
+                var processor = new ParticleMorphProcessor(particleSize: particleSize, totalSteps: ParticleMorphDefaultSteps);
+                processor.Initialize(resizedSource, targetImage);
+
+                var cts = new CancellationTokenSource();
+                _particleMorphCts = cts;
+                var token = cts.Token;
+
+                VideoWriter? morphVideo = null;
+                try
+                {
+                    if (!string.IsNullOrWhiteSpace(videoOutputPath))
+                    {
+                        var outputPath = EnsureVideoExtension(videoOutputPath);
+                        var fourCc = ResolveFourCcForPath(outputPath);
+                        var fps = Math.Max(1.0, 1000.0 / processor.FrameDelayMilliseconds);
+                        morphVideo = new VideoWriter(
+                            outputPath,
+                            fourCc,
+                            fps,
+                            new Size(targetWidth, targetHeight),
+                            true
+                        );
+                    }
+
+                    for (var frameIndex = 0; frameIndex < processor.TotalSteps; frameIndex++)
+                    {
+                        token.ThrowIfCancellationRequested();
+                        using var frame = processor.RenderFrame(frameIndex);
+                        morphVideo?.Write(frame.Mat);
+
+                        var frameBytes = frame.Bytes;
+                        var frameWidth = frame.Width;
+                        var frameHeight = frame.Height;
+
+                        Dispatcher.UIThread.Post(() =>
+                        {
+                            PictureBox2.Source = CreateBitmapFromPixelData(frameBytes, frameWidth, frameHeight);
+                        });
+
+                        await Task.Delay(processor.FrameDelayMilliseconds, token);
+
+                        if (morphVideo != null && frameIndex == processor.TotalSteps - 1)
+                        {
+                            for (var hold = 0; hold < ParticleMorphHoldFrameCount; hold++)
+                            {
+                                morphVideo.Write(frame.Mat);
+                            }
+                        }
+                    }
+                }
+                finally
+                {
+                    morphVideo?.Dispose();
+                    if (ReferenceEquals(_particleMorphCts, cts))
+                    {
+                        _particleMorphCts.Dispose();
+                        _particleMorphCts = null;
+                    }
+                    else
+                    {
+                        cts.Dispose();
+                    }
+                }
+            }
+            catch (OperationCanceledException)
+            {
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine(ex.Message);
+            }
+        });
+    }
+
     VideoCaptureInfo? _selectedVideoFile; // kiválasztott videó (felhasználó adja meg)
     VideoCaptureInfo? _webCamVideo; // webkamera videója
     VideoCaptureInfo? _exportedVideoFile; // visszajátszásmiatt van // később át lesz írva
@@ -149,6 +276,18 @@ public partial class MainWindow : Window
         MimeTypes = new[] { "video/x-msvideo" }
     };
     private static readonly FilePickerFileType[] VideoSaveFileTypes = { Mp4SaveFileType, AviSaveFileType };
+    private static readonly FilePickerFileType ImageFileType = new("Image files")
+    {
+        Patterns = new[] { "*.png", "*.jpg", "*.jpeg", "*.bmp", "*.gif", "*.tif", "*.tiff" },
+        AppleUniformTypeIdentifiers = new[] { "public.image" },
+        MimeTypes = new[]
+        {
+            "image/png", "image/jpeg", "image/bmp", "image/gif", "image/tiff"
+        }
+    };
+    private CancellationTokenSource? _particleMorphCts;
+    private const int ParticleMorphDefaultSteps = 90;
+    private const int ParticleMorphHoldFrameCount = 100;
     
 
     private async void PlayVideoFile()
@@ -256,6 +395,7 @@ public partial class MainWindow : Window
             else
             {
                 _isPlaying = true;
+                CancelParticleMorphAnimation();
                 PlayVideoFile();
                 button.Content = "Pause";
             }
@@ -271,6 +411,7 @@ public partial class MainWindow : Window
         PictureBox1.Source = null;
         PictureBox2.Source = null;
         PlayButton.Content = "Play";
+        CancelParticleMorphAnimation();
         if (_selectedVideoFile != null)
         {
             _selectedVideoFile.Video.Set(CapProp.PosMsec, 0.0);
@@ -517,6 +658,64 @@ public partial class MainWindow : Window
         }
     }
 
+    private async void ParticleMorphButton_Click(object sender, RoutedEventArgs e)
+    {
+        ToolStripMenuReset();
+        StopButton_Click(sender, e);
+        CancelParticleMorphAnimation();
+        var topLevel = TopLevel.GetTopLevel(this);
+        if (topLevel?.StorageProvider == null)
+        {
+            return;
+        }
+
+        var targetSelection = await topLevel.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = "Select target image...",
+            AllowMultiple = false,
+            FileTypeFilter = new[] { ImageFileType, FilePickerFileTypes.All }
+        });
+        if (targetSelection.Count == 0)
+        {
+            return;
+        }
+
+        var sourceSelection = await topLevel.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = "Select source image...",
+            AllowMultiple = false,
+            FileTypeFilter = new[] { ImageFileType, FilePickerFileTypes.All }
+        });
+        if (sourceSelection.Count == 0)
+        {
+            return;
+        }
+
+        var targetPath = targetSelection[0].Path.LocalPath;
+        var sourcePath = sourceSelection[0].Path.LocalPath;
+        var settings = await ShowParticleMorphSettingsDialogAsync();
+        if (settings == null)
+        {
+            return;
+        }
+
+        string? videoPath = null;
+        if (settings.SaveAsVideo)
+        {
+            var saveFile = await topLevel.StorageProvider.SaveFilePickerAsync(
+                BuildVideoSaveOptions("Save morph video...", "morph")
+            );
+            if (saveFile is null)
+            {
+                return;
+            }
+
+            videoPath = EnsureVideoExtension(saveFile.Path.LocalPath);
+        }
+
+        await StartParticleMorphAsync(targetPath, sourcePath, settings.ParticleSize, videoPath);
+    }
+
     private void ControlsEnabled(bool state)
     {
         InputToolstrip.IsEnabled = state;
@@ -582,6 +781,7 @@ public partial class MainWindow : Window
         _isExported = false;
         _isWebcamBackgroundRemovalOn = false;
         _isWebcamMosaicOn = false;
+        CancelParticleMorphAnimation();
         if (_webCamVideo?.Video != null)
         {
             _webCamVideo.Video.Stop();

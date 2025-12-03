@@ -1,0 +1,31 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:viewModels="clr-namespace:ImageProcessingFinal.ViewModels"
+        mc:Ignorable="d" d:DesignWidth="400" d:DesignHeight="220"
+        x:Class="ImageProcessingFinal.Views.ParticleMorphSettingsDialog"
+        Title="Particle morph settings" Width="420" Height="230"
+        Background="#1C1C1C" WindowStartupLocation="CenterOwner"
+        x:DataType="viewModels:ParticleMorphSettingsViewModel">
+    <Design.DataContext>
+        <viewModels:ParticleMorphSettingsViewModel />
+    </Design.DataContext>
+    <Border Padding="16" Background="#1E1E1E">
+        <StackPanel Spacing="12">
+            <TextBlock Text="Particle size (pixels)" Foreground="White" />
+            <Slider Minimum="{Binding MinimumParticleSize}"
+                    Maximum="{Binding MaximumParticleSize}"
+                    Value="{Binding ParticleSize}" TickFrequency="1"
+                    IsSnapToTickEnabled="True" />
+            <TextBlock Text="{Binding ParticleSize, StringFormat='Current size: {0}px'}"
+                       Foreground="LightGray" />
+            <CheckBox Content="Save animation as video"
+                      IsChecked="{Binding SaveAsVideo}" Foreground="White" />
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+                <Button Content="Cancel" Width="90" Click="Cancel_Click" />
+                <Button Content="OK" Width="90" Click="Ok_Click" />
+            </StackPanel>
+        </StackPanel>
+    </Border>
+</Window>
