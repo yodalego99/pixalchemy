@@ -43,6 +43,11 @@ public class ViBe
     {
         _samples = new byte[FrameImage.Size.Width, FrameImage.Size.Height, N, FrameImage.NumberOfChannels];
         _frameImageBytes = FrameImage.Data;
+
+        if (ShakyCamera)
+        {
+            _compareFrames = new byte[FrameImage.Size.Width, FrameImage.Size.Height, 2, FrameImage.NumberOfChannels];
+        }
         for (var k = 0; k < N; k++)
         {
             for (var x = 0; x < FrameImage.Size.Width; x++)
@@ -65,7 +70,14 @@ public class ViBe
 
     public void BackgroundModelUpdate(int i)
     {
+        if (FrameImage == null)
+            throw new InvalidOperationException("FrameImage must be set before BackgroundModelUpdate is called.");
+
         _frameImageBytes = FrameImage.Data;
+        if (ShakyCamera && _compareFrames == null)
+        {
+            _compareFrames = new byte[FrameImage.Size.Width, FrameImage.Size.Height, 2, FrameImage.NumberOfChannels];
+        }
         _segMapBytes = new byte[FrameImage.Size.Height, FrameImage.Size.Width, FrameImage.NumberOfChannels];
         for (var x = 0; x < FrameImage.Size.Width; x++)
         {
@@ -192,7 +204,8 @@ public class ViBe
 
     private int GetRandomNeighbourPixel(int coord)
     {
-        int[] var = [-1, 0, 1];
+
+        int[] var = new int[] { -1, 0, 1 };
 
         var rnd = new Random();
 
@@ -218,7 +231,7 @@ public static class ViBeExtensions
         vibe.Phi = 16;
         vibe.SegmapType = SegmapType.OnlySegmap;
         vibe.FrameDifferencePercentage = 0.125d;
-        vibe.ShakyCamera = vibe.ShakyCamera;
+        vibe.ShakyCamera = false;
         return vibe;
     }
 }

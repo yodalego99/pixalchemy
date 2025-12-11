@@ -136,6 +136,16 @@ public partial class MainWindow : Window
         };
     }
 
+    private async Task<ViBeSettingsViewModel?> ShowViBeSettingsDialogAsync()
+    {
+        var dialog = new ViBeSettingsDialog
+        {
+            DataContext = new ViBeSettingsViewModel()
+        };
+
+        return await dialog.ShowDialog<ViBeSettingsViewModel?>(this);
+    }
+
     private async Task<ParticleMorphSettingsViewModel?> ShowParticleMorphSettingsDialogAsync()
     {
         var dialog = new ParticleMorphSettingsDialog
@@ -209,7 +219,7 @@ public partial class MainWindow : Window
 
                         await Task.Delay(processor.FrameDelayMilliseconds, token);
 
-                        if (morphVideo != null && frameIndex == processor.TotalSteps - 1)
+                        if (morphVideo != null && (frameIndex == 0 || frameIndex == processor.TotalSteps - 1))
                         {
                             for (var hold = 0; hold < ParticleMorphHoldFrameCount; hold++)
                             {
@@ -288,6 +298,7 @@ public partial class MainWindow : Window
     private CancellationTokenSource? _particleMorphCts;
     private const int ParticleMorphDefaultSteps = 90;
     private const int ParticleMorphHoldFrameCount = 100;
+    private ViBeSettingsViewModel? _viBeSettings;
     
 
     private async void PlayVideoFile()
@@ -482,6 +493,15 @@ public partial class MainWindow : Window
     {
         ToolStripMenuReset();
         StopButton_Click(sender, e);
+
+        // Show ViBe settings dialog
+        var settings = await ShowViBeSettingsDialogAsync();
+        if (settings == null)
+        {
+            return;
+        }
+        _viBeSettings = settings;
+
         if (_selectedVideoFile != null)
         {
             _isPlaying = false;
@@ -501,6 +521,9 @@ public partial class MainWindow : Window
 
                 ControlsEnabled(false);
 
+                var shakyCamera = settings.EnableShakyCamera;
+                var segmapType = settings.SelectedSegmapType;
+
                 var outputCreation = new Thread(() =>
                 {
                     var removedBackgroundVideo = new VideoWriter(
@@ -510,6 +533,8 @@ public partial class MainWindow : Window
                         true
                     );
                     _viBeProcess = new ViBe().WithDefaults();
+                    _viBeProcess.ShakyCamera = shakyCamera;
+                    _viBeProcess.SegmapType = segmapType;
                     _currentFrame = _selectedVideoFile.Video.QueryFrame();
                     _viBeProcess.FrameImage = _currentFrame.ToImage<Rgb, byte>();
                     _viBeProcess.BackgroundModelInitialization();
@@ -663,6 +688,7 @@ public partial class MainWindow : Window
         ToolStripMenuReset();
         StopButton_Click(sender, e);
         CancelParticleMorphAnimation();
+        VideoCaptureRemover();
         var topLevel = TopLevel.GetTopLevel(this);
         if (topLevel?.StorageProvider == null)
         {
@@ -843,6 +869,11 @@ public partial class MainWindow : Window
                 if (_isWebcamBackgroundRemovalOn && _isFirstFrame)
                 {
                     _viBeProcess = new ViBe().WithDefaults();
+                    if (_viBeSettings != null)
+                    {
+                        _viBeProcess.ShakyCamera = _viBeSettings.EnableShakyCamera;
+                        _viBeProcess.SegmapType = _viBeSettings.SelectedSegmapType;
+                    }
                     _exportedCurrentFrame = _webCamVideo.Video.QueryFrame();
                     _viBeProcess.FrameImage = _exportedCurrentFrame.ToImage<Rgb, byte>();
                     _viBeProcess.BackgroundModelInitialization();

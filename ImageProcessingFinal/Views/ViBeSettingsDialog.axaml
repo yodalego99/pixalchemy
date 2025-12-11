@@ -3,13 +3,32 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:viewModels="clr-namespace:ImageProcessingFinal.ViewModels"
-        mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="450"
+        mc:Ignorable="d" d:DesignWidth="420" d:DesignHeight="260"
         x:Class="ImageProcessingFinal.Views.ViBeSettingsDialog" Background="#1C1C1C"
-        Title="ViBe settings" WindowStartupLocation="CenterOwner" Width="500" Height="300"
-        x:DataType="viewModels:TestDialogViewModel">
-        <Design.DataContext>
-                <viewModels:TestDialogViewModel/>
-        </Design.DataContext>
-        <StackPanel>
+        Title="ViBe settings" WindowStartupLocation="CenterOwner" Width="420" Height="260"
+        x:DataType="viewModels:ViBeSettingsViewModel">
+    <Design.DataContext>
+        <viewModels:ViBeSettingsViewModel />
+    </Design.DataContext>
+    <Border Padding="16" Background="#1E1E1E">
+        <StackPanel Spacing="12">
+            <CheckBox Content="Enable shaky camera detection"
+                      IsChecked="{Binding EnableShakyCamera}" Foreground="White" />
+            <TextBlock Text="Segmentation output type" Foreground="White" Margin="0,8,0,0" />
+            <ComboBox ItemsSource="{Binding SegmentationChoices}"
+                      SelectedItem="{Binding SegmentationChoices[0]}"
+                      x:Name="SegmapComboBox"
+                      HorizontalAlignment="Stretch">
+                <ComboBox.ItemTemplate>
+                    <DataTemplate>
+                        <TextBlock Text="{Binding DisplayName}" />
+                    </DataTemplate>
+                </ComboBox.ItemTemplate>
+            </ComboBox>
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8" Margin="0,16,0,0">
+                <Button Content="Cancel" Width="90" Click="Cancel_Click" />
+                <Button Content="OK" Width="90" Click="Ok_Click" />
+            </StackPanel>
         </StackPanel>
+    </Border>
 </Window>
