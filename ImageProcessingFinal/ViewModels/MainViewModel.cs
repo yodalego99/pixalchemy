@@ -1,5 +1,5 @@
 ﻿namespace ImageProcessingFinal.ViewModels;
 
-public partial class MainViewModel : ViewModelBase
+public class MainViewModel : ViewModelBase
 {
 }

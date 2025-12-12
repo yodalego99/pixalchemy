@@ -1,14 +1,14 @@
+using System.Linq;
 using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Data.Core.Plugins;
-using System.Linq;
 using Avalonia.Markup.Xaml;
 using ImageProcessingFinal.ViewModels;
 using ImageProcessingFinal.Views;
 
 namespace ImageProcessingFinal;
 
-public partial class App : Application
+public class App : Application
 {
     public override void Initialize()
     {
@@ -29,7 +29,7 @@ public partial class App : Application
         }
         else if (ApplicationLifetime is ISingleViewApplicationLifetime singleViewPlatform)
         {
-            singleViewPlatform.MainView = new MainWindow()
+            singleViewPlatform.MainView = new MainWindow
             {
                 DataContext = new MainViewModel()
             };
@@ -45,9 +45,6 @@ public partial class App : Application
             BindingPlugins.DataValidators.OfType<DataAnnotationsValidationPlugin>().ToArray();
 
         // remove each entry found
-        foreach (var plugin in dataValidationPluginsToRemove)
-        {
-            BindingPlugins.DataValidators.Remove(plugin);
-        }
+        foreach (var plugin in dataValidationPluginsToRemove) BindingPlugins.DataValidators.Remove(plugin);
     }
 }

@@ -9,10 +9,10 @@ namespace ImageProcessingFinal.Views;
 
 public sealed class ParticleMorphProcessor
 {
-    private readonly int _particleSize;
     private readonly List<Particle> _particles = new();
-    private int _width;
+    private readonly int _particleSize;
     private int _height;
+    private int _width;
 
     public ParticleMorphProcessor(int particleSize = 8, int totalSteps = 90, int frameDelayMilliseconds = 33)
     {
@@ -28,9 +28,7 @@ public sealed class ParticleMorphProcessor
     public void Initialize(Image<Bgr, byte> source, Image<Bgr, byte> target)
     {
         if (source.Width != target.Width || source.Height != target.Height)
-        {
             throw new ArgumentException("Source and target images must share the same size.");
-        }
 
         _width = target.Width;
         _height = target.Height;
@@ -52,9 +50,7 @@ public sealed class ParticleMorphProcessor
     public Image<Bgr, byte> RenderFrame(int frameIndex)
     {
         if (_particles.Count == 0)
-        {
             throw new InvalidOperationException("Initialize must be called before rendering frames.");
-        }
 
         var progress = Math.Clamp(frameIndex / Math.Max(1.0, TotalSteps - 1), 0.0, 1.0);
         var canvas = new Image<Bgr, byte>(_width, _height, new Bgr(0, 0, 0));
@@ -91,10 +87,7 @@ public sealed class ParticleMorphProcessor
         for (var i = 0; i < targets.Count; i++)
         {
             var score = ColorDistance(color, targets[i].Color);
-            if (score >= bestScore)
-            {
-                continue;
-            }
+            if (score >= bestScore) continue;
 
             bestScore = score;
             bestIndex = i;
@@ -117,13 +110,11 @@ public sealed class ParticleMorphProcessor
         long sumG = 0;
         long sumR = 0;
         for (var row = rect.Top; row < rect.Top + rect.Height; row++)
+        for (var col = rect.Left; col < rect.Left + rect.Width; col++)
         {
-            for (var col = rect.Left; col < rect.Left + rect.Width; col++)
-            {
-                sumB += data[row, col, 0];
-                sumG += data[row, col, 1];
-                sumR += data[row, col, 2];
-            }
+            sumB += data[row, col, 0];
+            sumG += data[row, col, 1];
+            sumR += data[row, col, 2];
         }
 
         var total = Math.Max(1, rect.Width * rect.Height);

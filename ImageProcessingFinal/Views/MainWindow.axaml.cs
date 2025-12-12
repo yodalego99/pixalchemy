@@ -1,19 +1,18 @@
-using Avalonia.Controls;
 using System;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using Avalonia;
+using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Media.Imaging;
+using Avalonia.Platform;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
-using CommunityToolkit.Mvvm.Messaging;
 using Emgu.CV;
 using Emgu.CV.CvEnum;
 using Emgu.CV.Structure;
-using ImageProcessingFinal.Messages;
 using ImageProcessingFinal.ViewModels;
 using Size = System.Drawing.Size;
 
@@ -21,20 +20,67 @@ namespace ImageProcessingFinal.Views;
 
 public partial class MainWindow : Window
 {
+    private const string MosaicTilesFolderName = "MosaicTiles";
+    private const int DefaultMosaicTileSize = 24;
+    private const int ParticleMorphDefaultSteps = 90;
+    private const int ParticleMorphHoldFrameCount = 100;
+
+    private static readonly FilePickerFileType VideoOpenFileType = new("Video files")
+    {
+        Patterns = new[] { "*.mp4", "*.mov", "*.avi", "*.mkv", "*.wmv" },
+        AppleUniformTypeIdentifiers = new[] { "public.movie" },
+        MimeTypes = new[] { "video/mp4", "video/quicktime", "video/x-msvideo", "video/x-matroska", "video/x-ms-wmv" }
+    };
+
+    private static readonly FilePickerFileType Mp4SaveFileType = new("MP4 video (*.mp4)")
+    {
+        Patterns = new[] { "*.mp4" },
+        AppleUniformTypeIdentifiers = new[] { "public.mpeg-4" },
+        MimeTypes = new[] { "video/mp4" }
+    };
+
+    private static readonly FilePickerFileType AviSaveFileType = new("AVI video (*.avi)")
+    {
+        Patterns = new[] { "*.avi" },
+        AppleUniformTypeIdentifiers = new[] { "public.avi" },
+        MimeTypes = new[] { "video/x-msvideo" }
+    };
+
+    private static readonly FilePickerFileType[] VideoSaveFileTypes = { Mp4SaveFileType, AviSaveFileType };
+
+    private static readonly FilePickerFileType ImageFileType = new("Image files")
+    {
+        Patterns = new[] { "*.png", "*.jpg", "*.jpeg", "*.bmp", "*.gif", "*.tif", "*.tiff" },
+        AppleUniformTypeIdentifiers = new[] { "public.image" },
+        MimeTypes = new[]
+        {
+            "image/png", "image/jpeg", "image/bmp", "image/gif", "image/tiff"
+        }
+    };
+
+    private Mat? _currentFrame; // jelenlegi frame Mat típusú képe
+    private Mat? _exportedCurrentFrame; // kiexportált képkocka - videó exportálásánál használjuk
+    private VideoCaptureInfo? _exportedVideoFile; // visszajátszásmiatt van // később át lesz írva
+    private bool _isExported; // jelzi, hogy megtörtént-e már a videón a háttérleválasztás
+    private bool _isFirstFrame; // ellenőrzi, hogy a kikért képkocka az első-e a webkamerának
+    private bool _isPlaying; // jelzi, hogy lejátszódik-e éppen a videó
+    private bool _isWebcamBackgroundRemovalOn; // jelzi, hogy be van-e kapcsolva a webkamera háttérleválasztása
+    private bool _isWebcamMosaicOn;
+    private MosaicProcessor? _mosaicProcessor;
+    private CancellationTokenSource? _particleMorphCts;
+
+    private VideoCaptureInfo? _selectedVideoFile; // kiválasztott videó (felhasználó adja meg)
+
+    private bool _suppressTrackBarChange;
+    private ViBe _viBeProcess;
+    private ViBeSettingsViewModel? _viBeSettings;
+    private Image<Bgr, byte>? _webCamFrame; // webkamera videóinak képkockája
+    private VideoCaptureInfo? _webCamVideo; // webkamera videója
+
     public MainWindow()
     {
         InitializeComponent();
-        WeakReferenceMessenger.Default.Register<MainWindow, TestMessage>(this, (w, m) =>
-        {
-            var dialog = new ViBeSettingsDialog
-            {
-                DataContext = new TestDialogViewModel()
-            };
-            m.Reply(dialog.ShowDialog<TestDialogViewModel>(w));
-        });
     }
-
-    private bool _suppressTrackBarChange;
 
     private static WriteableBitmap CreateBitmapFromPixelData(
         byte[] rgbPixelData,
@@ -48,7 +94,7 @@ public partial class MainWindow : Window
         var bitmap = new WriteableBitmap(
             new PixelSize(width, height),
             dpi,
-            Avalonia.Platform.PixelFormats.Bgr24
+            PixelFormats.Bgr24
         );
         using var frameBuffer = bitmap.Lock();
         Marshal.Copy(rgbPixelData, 0, frameBuffer.Address, rgbPixelData.Length);
@@ -58,7 +104,7 @@ public partial class MainWindow : Window
 
     private MosaicProcessor EnsureMosaicProcessor()
     {
-        _mosaicProcessor ??= new MosaicProcessor(GetMosaicTileDirectory(), DefaultMosaicTileSize);
+        _mosaicProcessor ??= new MosaicProcessor(GetMosaicTileDirectory());
         _mosaicProcessor.EnsureTileLibraryLoaded();
         return _mosaicProcessor;
     }
@@ -72,10 +118,7 @@ public partial class MainWindow : Window
 
     private void CancelParticleMorphAnimation()
     {
-        if (_particleMorphCts == null)
-        {
-            return;
-        }
+        if (_particleMorphCts == null) return;
 
         try
         {
@@ -107,10 +150,7 @@ public partial class MainWindow : Window
         if (!string.IsNullOrWhiteSpace(_selectedVideoFile?.FilePath))
         {
             var baseName = Path.GetFileNameWithoutExtension(_selectedVideoFile.FilePath);
-            if (!string.IsNullOrWhiteSpace(baseName))
-            {
-                return baseName;
-            }
+            if (!string.IsNullOrWhiteSpace(baseName)) return baseName;
         }
 
         return "output";
@@ -118,10 +158,7 @@ public partial class MainWindow : Window
 
     private static string EnsureVideoExtension(string path, string fallbackExtension = ".mp4")
     {
-        if (string.IsNullOrWhiteSpace(Path.GetExtension(path)))
-        {
-            return path + fallbackExtension;
-        }
+        if (string.IsNullOrWhiteSpace(Path.GetExtension(path))) return path + fallbackExtension;
 
         return path;
     }
@@ -156,7 +193,8 @@ public partial class MainWindow : Window
         return await dialog.ShowDialog<ParticleMorphSettingsViewModel?>(this);
     }
 
-    private async Task StartParticleMorphAsync(string targetPath, string sourcePath, int particleSize, string? videoOutputPath)
+    private async Task StartParticleMorphAsync(string targetPath, string sourcePath, int particleSize,
+        string? videoOutputPath)
     {
         CancelParticleMorphAnimation();
         await Task.Run(async () =>
@@ -178,7 +216,7 @@ public partial class MainWindow : Window
                     PictureBox2.Source = CreateBitmapFromPixelData(sourceBytes, targetWidth, targetHeight);
                 });
 
-                var processor = new ParticleMorphProcessor(particleSize: particleSize, totalSteps: ParticleMorphDefaultSteps);
+                var processor = new ParticleMorphProcessor(particleSize);
                 processor.Initialize(resizedSource, targetImage);
 
                 var cts = new CancellationTokenSource();
@@ -220,12 +258,8 @@ public partial class MainWindow : Window
                         await Task.Delay(processor.FrameDelayMilliseconds, token);
 
                         if (morphVideo != null && (frameIndex == 0 || frameIndex == processor.TotalSteps - 1))
-                        {
                             for (var hold = 0; hold < ParticleMorphHoldFrameCount; hold++)
-                            {
                                 morphVideo.Write(frame.Mat);
-                            }
-                        }
                     }
                 }
                 finally
@@ -252,69 +286,16 @@ public partial class MainWindow : Window
         });
     }
 
-    VideoCaptureInfo? _selectedVideoFile; // kiválasztott videó (felhasználó adja meg)
-    VideoCaptureInfo? _webCamVideo; // webkamera videója
-    VideoCaptureInfo? _exportedVideoFile; // visszajátszásmiatt van // később át lesz írva
-    Image<Bgr, byte>? _webCamFrame; // webkamera videóinak képkockája
-    bool _isWebcamBackgroundRemovalOn = false; // jelzi, hogy be van-e kapcsolva a webkamera háttérleválasztása
-    bool _isFirstFrame = false; // ellenőrzi, hogy a kikért képkocka az első-e a webkamerának
-    bool _isPlaying = false; // jelzi, hogy lejátszódik-e éppen a videó
-    bool _isExported = false; // jelzi, hogy megtörtént-e már a videón a háttérleválasztás
-    bool _isWebcamMosaicOn = false;
-    Mat? _currentFrame; // jelenlegi frame Mat típusú képe
-    Mat? _exportedCurrentFrame; // kiexportált képkocka - videó exportálásánál használjuk
-    ViBe _viBeProcess;
-    MosaicProcessor? _mosaicProcessor;
-    private const string MosaicTilesFolderName = "MosaicTiles";
-    private const int DefaultMosaicTileSize = 24;
-    private static readonly FilePickerFileType VideoOpenFileType = new("Video files")
-    {
-        Patterns = new[] { "*.mp4", "*.mov", "*.avi", "*.mkv", "*.wmv" },
-        AppleUniformTypeIdentifiers = new[] { "public.movie" },
-        MimeTypes = new[] { "video/mp4", "video/quicktime", "video/x-msvideo", "video/x-matroska", "video/x-ms-wmv" }
-    };
-    private static readonly FilePickerFileType Mp4SaveFileType = new("MP4 video (*.mp4)")
-    {
-        Patterns = new[] { "*.mp4" },
-        AppleUniformTypeIdentifiers = new[] { "public.mpeg-4" },
-        MimeTypes = new[] { "video/mp4" }
-    };
-    private static readonly FilePickerFileType AviSaveFileType = new("AVI video (*.avi)")
-    {
-        Patterns = new[] { "*.avi" },
-        AppleUniformTypeIdentifiers = new[] { "public.avi" },
-        MimeTypes = new[] { "video/x-msvideo" }
-    };
-    private static readonly FilePickerFileType[] VideoSaveFileTypes = { Mp4SaveFileType, AviSaveFileType };
-    private static readonly FilePickerFileType ImageFileType = new("Image files")
-    {
-        Patterns = new[] { "*.png", "*.jpg", "*.jpeg", "*.bmp", "*.gif", "*.tif", "*.tiff" },
-        AppleUniformTypeIdentifiers = new[] { "public.image" },
-        MimeTypes = new[]
-        {
-            "image/png", "image/jpeg", "image/bmp", "image/gif", "image/tiff"
-        }
-    };
-    private CancellationTokenSource? _particleMorphCts;
-    private const int ParticleMorphDefaultSteps = 90;
-    private const int ParticleMorphHoldFrameCount = 100;
-    private ViBeSettingsViewModel? _viBeSettings;
-    
 
     private async void PlayVideoFile()
     {
         try
         {
-            if (_selectedVideoFile?.Video == null && _selectedVideoFile?.FilePath == String.Empty)
-            {
-                return;
-            }
+            if (_selectedVideoFile?.Video == null && _selectedVideoFile?.FilePath == string.Empty) return;
 
             if (_selectedVideoFile?.Video != null && !_selectedVideoFile.Video.Grab() &&
-                _selectedVideoFile?.FilePath != String.Empty)
-            {
+                _selectedVideoFile?.FilePath != string.Empty)
                 _selectedVideoFile.Video = new VideoCapture(_selectedVideoFile.FilePath);
-            }
 
             try
             {
@@ -324,18 +305,13 @@ public partial class MainWindow : Window
                 var frameDelay = _selectedVideoFile.DeltaFrameTime ?? 0d;
                 while (_isPlaying && currentVideo == _selectedVideoFile)
                 {
-                    if (!currentVideo.Video.Read(_currentFrame) || _currentFrame.IsEmpty)
-                    {
-                        break;
-                    }
+                    if (!currentVideo.Video.Read(_currentFrame) || _currentFrame.IsEmpty) break;
 
                     if (_isExported)
                     {
                         if (_exportedVideoFile?.Video != null && !_exportedVideoFile.Video.Grab() &&
-                            _exportedVideoFile?.FilePath != String.Empty)
-                        {
+                            _exportedVideoFile?.FilePath != string.Empty)
                             _exportedVideoFile.Video = new VideoCapture(_exportedVideoFile.FilePath);
-                        }
 
                         if (_exportedVideoFile != null)
                         {
@@ -395,7 +371,7 @@ public partial class MainWindow : Window
 
     private void PlayButton_Click(object sender, RoutedEventArgs e)
     {
-        Button button = (Button)sender;
+        var button = (Button)sender;
         if (_selectedVideoFile != null)
         {
             if (_isPlaying)
@@ -423,15 +399,9 @@ public partial class MainWindow : Window
         PictureBox2.Source = null;
         PlayButton.Content = "Play";
         CancelParticleMorphAnimation();
-        if (_selectedVideoFile != null)
-        {
-            _selectedVideoFile.Video.Set(CapProp.PosMsec, 0.0);
-        }
+        if (_selectedVideoFile != null) _selectedVideoFile.Video.Set(CapProp.PosMsec, 0.0);
 
-        if (_exportedVideoFile != null)
-        {
-            _exportedVideoFile.Video.Set(CapProp.PosMsec, 0.0);
-        }
+        if (_exportedVideoFile != null) _exportedVideoFile.Video.Set(CapProp.PosMsec, 0.0);
     }
 
     /*private void VideoFrameExportButton_Click(object sender, RoutedEventArgs e)
@@ -496,20 +466,14 @@ public partial class MainWindow : Window
 
         // Show ViBe settings dialog
         var settings = await ShowViBeSettingsDialogAsync();
-        if (settings == null)
-        {
-            return;
-        }
+        if (settings == null) return;
         _viBeSettings = settings;
 
         if (_selectedVideoFile != null)
         {
             _isPlaying = false;
-            var topLevel = TopLevel.GetTopLevel(this);
-            if (topLevel?.StorageProvider == null)
-            {
-                return;
-            }
+            var topLevel = GetTopLevel(this);
+            if (topLevel?.StorageProvider == null) return;
 
             var outputVideo = await topLevel.StorageProvider.SaveFilePickerAsync(
                 BuildVideoSaveOptions("Save video...", "vibe")
@@ -528,7 +492,7 @@ public partial class MainWindow : Window
                 {
                     var removedBackgroundVideo = new VideoWriter(
                         outputVideoLocation, outputFourCc,
-                        (double)_selectedVideoFile.Fps,
+                        _selectedVideoFile.Fps,
                         new Size(_selectedVideoFile.Video.Width, _selectedVideoFile.Video.Height),
                         true
                     );
@@ -587,19 +551,13 @@ public partial class MainWindow : Window
         if (_selectedVideoFile != null)
         {
             _isPlaying = false;
-            var topLevel = TopLevel.GetTopLevel(this);
-            if (topLevel?.StorageProvider == null)
-            {
-                return;
-            }
+            var topLevel = GetTopLevel(this);
+            if (topLevel?.StorageProvider == null) return;
 
             var outputVideo = await topLevel.StorageProvider.SaveFilePickerAsync(
                 BuildVideoSaveOptions("Save mosaic video...", "mosaic")
             );
-            if (outputVideo is null)
-            {
-                return;
-            }
+            if (outputVideo is null) return;
 
             var outputVideoLocation = EnsureVideoExtension(outputVideo.Path.LocalPath);
             var outputFourCc = ResolveFourCcForPath(outputVideoLocation);
@@ -613,7 +571,7 @@ public partial class MainWindow : Window
                     var mosaicProcessor = EnsureMosaicProcessor();
                     mosaicVideo = new VideoWriter(
                         outputVideoLocation, outputFourCc,
-                        (double)_selectedVideoFile.Fps,
+                        _selectedVideoFile.Fps,
                         new Size(_selectedVideoFile.Video.Width, _selectedVideoFile.Video.Height),
                         true
                     );
@@ -622,10 +580,7 @@ public partial class MainWindow : Window
                     _selectedVideoFile.Video.Set(CapProp.PosFrames, 0);
                     while (_selectedVideoFile.Video.Read(_currentFrame))
                     {
-                        if (_currentFrame.IsEmpty)
-                        {
-                            break;
-                        }
+                        if (_currentFrame.IsEmpty) break;
 
                         var frameImage = _currentFrame.ToImage<Bgr, byte>();
                         var mosaicImage = mosaicProcessor.BuildMosaic(frameImage);
@@ -689,11 +644,8 @@ public partial class MainWindow : Window
         StopButton_Click(sender, e);
         CancelParticleMorphAnimation();
         VideoCaptureRemover();
-        var topLevel = TopLevel.GetTopLevel(this);
-        if (topLevel?.StorageProvider == null)
-        {
-            return;
-        }
+        var topLevel = GetTopLevel(this);
+        if (topLevel?.StorageProvider == null) return;
 
         var targetSelection = await topLevel.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
         {
@@ -701,10 +653,7 @@ public partial class MainWindow : Window
             AllowMultiple = false,
             FileTypeFilter = new[] { ImageFileType, FilePickerFileTypes.All }
         });
-        if (targetSelection.Count == 0)
-        {
-            return;
-        }
+        if (targetSelection.Count == 0) return;
 
         var sourceSelection = await topLevel.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
         {
@@ -712,18 +661,12 @@ public partial class MainWindow : Window
             AllowMultiple = false,
             FileTypeFilter = new[] { ImageFileType, FilePickerFileTypes.All }
         });
-        if (sourceSelection.Count == 0)
-        {
-            return;
-        }
+        if (sourceSelection.Count == 0) return;
 
         var targetPath = targetSelection[0].Path.LocalPath;
         var sourcePath = sourceSelection[0].Path.LocalPath;
         var settings = await ShowParticleMorphSettingsDialogAsync();
-        if (settings == null)
-        {
-            return;
-        }
+        if (settings == null) return;
 
         string? videoPath = null;
         if (settings.SaveAsVideo)
@@ -731,10 +674,7 @@ public partial class MainWindow : Window
             var saveFile = await topLevel.StorageProvider.SaveFilePickerAsync(
                 BuildVideoSaveOptions("Save morph video...", "morph")
             );
-            if (saveFile is null)
-            {
-                return;
-            }
+            if (saveFile is null) return;
 
             videoPath = EnsureVideoExtension(saveFile.Path.LocalPath);
         }
@@ -759,16 +699,10 @@ public partial class MainWindow : Window
 
     private void TimeStampBar_Scroll(object sender, RoutedEventArgs e)
     {
-        if (_suppressTrackBarChange || _selectedVideoFile?.Video == null)
-        {
-            return;
-        }
+        if (_suppressTrackBarChange || _selectedVideoFile?.Video == null) return;
 
         var requestedPosition = TrackBar1.Value;
-        if (double.IsNaN(requestedPosition) || double.IsInfinity(requestedPosition))
-        {
-            return;
-        }
+        if (double.IsNaN(requestedPosition) || double.IsInfinity(requestedPosition)) return;
 
         _isPlaying = false;
         PlayButton.Content = "Play";
@@ -813,6 +747,7 @@ public partial class MainWindow : Window
             _webCamVideo.Video.Stop();
             _webCamVideo.Video.Dispose();
         }
+
         _webCamVideo = null;
         _selectedVideoFile = null;
         _exportedVideoFile = null;
@@ -828,11 +763,11 @@ public partial class MainWindow : Window
             VideoCaptureRemover();
             ToolStripMenuReset();
             StopButton_Click(sender, e);
-            Thread webCamCapture = new Thread(() =>
+            var webCamCapture = new Thread(() =>
             {
                 if (_webCamVideo == null)
                 {
-                    _webCamVideo = new VideoCaptureInfo(new VideoCapture(), true, String.Empty);
+                    _webCamVideo = new VideoCaptureInfo(new VideoCapture(), true, string.Empty);
                     _webCamVideo.Video.ImageGrabbed += WebCamVideo_ImageGrabbed;
                     _isWebcamBackgroundRemovalOn = false;
                     _isWebcamMosaicOn = false;
@@ -874,6 +809,7 @@ public partial class MainWindow : Window
                         _viBeProcess.ShakyCamera = _viBeSettings.EnableShakyCamera;
                         _viBeProcess.SegmapType = _viBeSettings.SelectedSegmapType;
                     }
+
                     _exportedCurrentFrame = _webCamVideo.Video.QueryFrame();
                     _viBeProcess.FrameImage = _exportedCurrentFrame.ToImage<Rgb, byte>();
                     _viBeProcess.BackgroundModelInitialization();
@@ -919,11 +855,6 @@ public partial class MainWindow : Window
         }
     }
 
-    private async void OpenDialogWithView(object? sender, RoutedEventArgs e)
-    {
-        var test = await WeakReferenceMessenger.Default.Send(new TestMessage());
-    }
-
     private async void VideoSelect_Click(object? sender, RoutedEventArgs e)
     {
         Dispatcher.UIThread.Post(() =>
@@ -932,11 +863,8 @@ public partial class MainWindow : Window
             VideoCaptureRemover();
         });
         ToolStripMenuReset();
-        var topLevel = TopLevel.GetTopLevel(this);
-        if (topLevel?.StorageProvider == null)
-        {
-            return;
-        }
+        var topLevel = GetTopLevel(this);
+        if (topLevel?.StorageProvider == null) return;
 
         var openVideoFile = await topLevel.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
         {
@@ -960,7 +888,7 @@ public partial class MainWindow : Window
             _suppressTrackBarChange = false;
             if (_selectedVideoFile.Video.Read(_currentFrame) && !_currentFrame.IsEmpty)
             {
-                var frameImage = _currentFrame.ToImage<Rgb, Byte>();
+                var frameImage = _currentFrame.ToImage<Rgb, byte>();
                 PictureBox1.Source = CreateBitmapFromPixelData(frameImage.Bytes, frameImage.Width, frameImage.Height);
                 _selectedVideoFile.Video.Set(CapProp.PosFrames, 0);
             }

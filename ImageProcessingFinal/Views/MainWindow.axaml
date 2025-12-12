@@ -15,30 +15,28 @@
     <Grid RowDefinitions="Auto, *, Auto, Auto" Margin="10" ColumnDefinitions="*,*">
         <Menu Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="2" Name="Toolstrip">
             <MenuItem Header="_File" Name="InputToolstrip">
-                <MenuItem Header="Open _video..." Click="VideoSelect_Click"></MenuItem>
-                <MenuItem Header="Open _webcam..." Click="VideoFromWebcamToolStripMenuItem_Click"></MenuItem>
-                <Separator></Separator>
+                <MenuItem Header="Open _video..." Click="VideoSelect_Click" />
+                <MenuItem Header="Open _webcam..." Click="VideoFromWebcamToolStripMenuItem_Click" />
             </MenuItem>
             <MenuItem Header="_Edit" Name="ProcessToolstrip">
-                <MenuItem Header="Remove video background..." Click="vBackgroundRemovalButton_Click"></MenuItem>
-                <MenuItem Header="Apply mosaic..." Click="MosaicEffectButton_Click"></MenuItem>
-                <MenuItem Header="Particle morph..." Click="ParticleMorphButton_Click"></MenuItem>
-                <Separator></Separator>
-                
+                <MenuItem Header="Remove video background..." Click="vBackgroundRemovalButton_Click" />
+                <MenuItem Header="Apply mosaic..." Click="MosaicEffectButton_Click" />
+                <MenuItem Header="Particle morph..." Click="ParticleMorphButton_Click" />
+
             </MenuItem>
         </Menu>
         <Panel Grid.Row="1" Grid.Column="0">
             <Border Background="#161616" BorderBrush="Azure" BorderThickness="1">
-                <Image Name="PictureBox1"></Image>
+                <Image Name="PictureBox1" />
             </Border>
         </Panel>
         <Panel Grid.Row="1" Grid.Column="1">
             <Border Background="#161616" BorderBrush="Azure" BorderThickness="1">
-                <Image Name="PictureBox2"></Image>
+                <Image Name="PictureBox2" />
             </Border>
         </Panel>
         <Panel Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="2">
-            <Slider Name="TrackBar1" Margin=" 10, 0" ValueChanged="TimeStampBar_Scroll"></Slider>
+            <Slider Name="TrackBar1" Margin=" 10, 0" ValueChanged="TimeStampBar_Scroll" />
         </Panel>
         <WrapPanel Grid.Row="3" Grid.Column="0" Grid.ColumnSpan="2" HorizontalAlignment="Center">
             <Button Click="PlayButton_Click" Name="PlayButton">Play</Button>

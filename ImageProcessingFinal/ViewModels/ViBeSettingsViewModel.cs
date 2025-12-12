@@ -38,10 +38,7 @@ public sealed class ViBeSettingsViewModel : ViewModelBase
 
     public void ApplyFrom(ViBeSettingsViewModel source)
     {
-        if (source == null)
-        {
-            return;
-        }
+        if (source == null) return;
 
         EnableShakyCamera = source.EnableShakyCamera;
         SelectedSegmapType = source.SelectedSegmapType;

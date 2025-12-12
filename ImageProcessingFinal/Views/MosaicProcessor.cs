@@ -11,7 +11,7 @@ using Emgu.CV.Structure;
 namespace ImageProcessingFinal.Views;
 
 /// <summary>
-/// Builds photo mosaics from pre-defined tile images.
+///     Builds photo mosaics from pre-defined tile images.
 /// </summary>
 public sealed class MosaicProcessor
 {
@@ -39,10 +39,11 @@ public sealed class MosaicProcessor
         new(0, 0, 0)
     };
 
-    private readonly string _tileDirectory;
-    private readonly int _tileSize;
-    private readonly List<MosaicTile> _tiles = new();
     private readonly object _initializationGate = new();
+
+    private readonly string _tileDirectory;
+    private readonly List<MosaicTile> _tiles = new();
+    private readonly int _tileSize;
 
     public MosaicProcessor(string tileDirectory, int tileSize = 24)
     {
@@ -52,17 +53,11 @@ public sealed class MosaicProcessor
 
     public void EnsureTileLibraryLoaded()
     {
-        if (_tiles.Count > 0)
-        {
-            return;
-        }
+        if (_tiles.Count > 0) return;
 
         lock (_initializationGate)
         {
-            if (_tiles.Count > 0)
-            {
-                return;
-            }
+            if (_tiles.Count > 0) return;
 
             LoadTileLibrary();
         }
@@ -73,7 +68,6 @@ public sealed class MosaicProcessor
         Directory.CreateDirectory(_tileDirectory);
         foreach (var path in Directory.EnumerateFiles(_tileDirectory)
                      .Where(f => SupportedExtensions.Contains(Path.GetExtension(f) ?? string.Empty)))
-        {
             try
             {
                 var resized = new Image<Bgr, byte>(path).Resize(_tileSize, _tileSize, Inter.Area);
@@ -84,16 +78,14 @@ public sealed class MosaicProcessor
             {
                 // Ignore unreadable tiles so the rest of the set can still be used.
             }
-        }
 
         if (_tiles.Count == 0)
-        {
             foreach (var color in FallbackPalette)
             {
                 var generator = new Image<Bgr, byte>(_tileSize, _tileSize, color);
-                _tiles.Add(new MosaicTile(generator, color, $"Fallback-{color.Blue.ToString(CultureInfo.InvariantCulture)}"));
+                _tiles.Add(new MosaicTile(generator, color,
+                    $"Fallback-{color.Blue.ToString(CultureInfo.InvariantCulture)}"));
             }
-        }
     }
 
     public Image<Bgr, byte> BuildMosaic(Image<Bgr, byte> source)
@@ -121,14 +113,11 @@ public sealed class MosaicProcessor
     private MosaicTile FindClosestTile(Bgr avgColor)
     {
         MosaicTile? closest = null;
-        double bestScore = double.MaxValue;
+        var bestScore = double.MaxValue;
         foreach (var tile in _tiles)
         {
             var score = tile.DistanceSquared(avgColor);
-            if (!(score < bestScore))
-            {
-                continue;
-            }
+            if (!(score < bestScore)) continue;
 
             bestScore = score;
             closest = tile;
@@ -143,13 +132,11 @@ public sealed class MosaicProcessor
         long sumG = 0;
         long sumR = 0;
         for (var row = startY; row < startY + height; row++)
+        for (var col = startX; col < startX + width; col++)
         {
-            for (var col = startX; col < startX + width; col++)
-            {
-                sumB += data[row, col, 0];
-                sumG += data[row, col, 1];
-                sumR += data[row, col, 2];
-            }
+            sumB += data[row, col, 0];
+            sumG += data[row, col, 1];
+            sumR += data[row, col, 2];
         }
 
         var total = Math.Max(1, width * height);

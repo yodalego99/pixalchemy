@@ -26,15 +26,19 @@
             <PrivateAssets Condition="'$(Configuration)' != 'Debug'">All</PrivateAssets>
         </PackageReference>
         <PackageReference Include="CommunityToolkit.Mvvm"/>
-        <PackageReference Include="DialogHost.Avalonia" />
-        <PackageReference Include="Emgu.CV" />
-        <PackageReference Include="Emgu.CV.runtime.debian-arm" />
-        <PackageReference Include="Emgu.CV.runtime.debian-arm64" />
-        <PackageReference Include="Emgu.CV.runtime.mini.uwp" />
-        <PackageReference Include="Emgu.CV.runtime.ubuntu-x64" />
-        <PackageReference Include="Emgu.CV.runtime.windows" />
-        <PackageReference Include="SkiaSharp.Svg" />
-        <PackageReference Include="Svg.Controls.Avalonia" />
-        <PackageReference Include="Svg.Controls.Skia.Avalonia" />
+        <PackageReference Include="DialogHost.Avalonia"/>
+        <PackageReference Include="Emgu.CV"/>
+        <PackageReference Include="Emgu.CV.runtime.debian-arm"/>
+        <PackageReference Include="Emgu.CV.runtime.debian-arm64"/>
+        <PackageReference Include="Emgu.CV.runtime.mini.uwp"/>
+        <PackageReference Include="Emgu.CV.runtime.ubuntu-x64"/>
+        <PackageReference Include="Emgu.CV.runtime.windows"/>
+        <PackageReference Include="SkiaSharp.Svg"/>
+        <PackageReference Include="Svg.Controls.Avalonia"/>
+        <PackageReference Include="Svg.Controls.Skia.Avalonia"/>
+    </ItemGroup>
+
+    <ItemGroup>
+        <Folder Include="Messages\"/>
     </ItemGroup>
 </Project>
