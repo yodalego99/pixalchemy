@@ -1,4 +1,4 @@
-# PixAlchemy (Desktop)
+# PixAlchemy
 
 PixAlchemy is an Avalonia desktop app for video and image effects powered by OpenCV (Emgu CV).
 
